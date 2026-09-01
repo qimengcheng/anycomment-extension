@@ -81,7 +81,12 @@
     fab.addEventListener('click', toggle);
     quoteBtn.addEventListener('click', onQuoteComment);
     document.addEventListener('mouseup', onTextSelect);
-    document.addEventListener('mousedown', () => { setTimeout(() => { quoteBtn.style.display = 'none'; }, 10); });
+    document.addEventListener('mousedown', (e) => {
+      // 点击 quoteBtn 时不隐藏按钮（避免点击事件被中断）
+      const path = e.composedPath ? e.composedPath() : [];
+      if (path.includes(quoteBtn)) return;
+      setTimeout(() => { quoteBtn.style.display = 'none'; }, 10);
+    });
     window.addEventListener('message', onMessage);
     hookHistory();
     refreshBadge();
@@ -150,15 +155,15 @@
         quoteBtn.style.display = 'none';
         return;
       }
-      // 计算按钮位置：在选区上方居中
+      // 计算按钮位置：在选区上方居中（fixed 定位相对于视口，不需要 scroll 偏移）
       const btnWidth = 80;
       const btnHeight = 32;
-      let left = rect.left + rect.width / 2 - btnWidth / 2 + window.scrollX;
-      let top = rect.top - btnHeight - 8 + window.scrollY;
+      let left = rect.left + rect.width / 2 - btnWidth / 2;
+      let top = rect.top - btnHeight - 8;
       // 防止超出视口
       if (left < 8) left = 8;
       if (left + btnWidth > window.innerWidth - 8) left = window.innerWidth - btnWidth - 8;
-      if (top < window.scrollY + 8) top = rect.bottom + 8 + window.scrollY;
+      if (top < 8) top = rect.bottom + 8;
       quoteBtn.style.left = left + 'px';
       quoteBtn.style.top = top + 'px';
       quoteBtn.style.display = 'flex';
@@ -336,7 +341,7 @@
     .ac-panel.open { transform: translateX(0); }
     .ac-panel iframe { width: 100%; height: 100%; border: none; display: block; }
     .ac-quote-btn {
-      position: absolute; z-index: 2147483647;
+      position: fixed; z-index: 2147483647;
       display: flex; align-items: center; gap: 4px;
       padding: 6px 12px; border-radius: 16px; border: none; cursor: pointer;
       background: #4f6ef7; color: #fff; font: 600 12px/1 system-ui, sans-serif;
