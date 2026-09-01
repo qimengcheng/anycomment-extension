@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "AnyComment 网页评论",
+  "version": "1.13.0",
+  "description": "在任意网页右侧展开评论区，发表评论、回复他人、参与讨论。",
+  "permissions": ["storage", "alarms"],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "AnyComment 设置"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["content.js"],
+      "run_at": "document_start"
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
