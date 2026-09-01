@@ -70,8 +70,14 @@ async function checkUpdateNow() {
 
   try {
     const res = await fetch('https://api.github.com/repos/qimengcheng/anycomment-extension/releases/latest', { cache: 'no-store' });
-    if (!res.ok) throw new Error('网络错误');
+    console.log('[checkUpdate] status:', res.status, res.statusText);
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      console.error('[checkUpdate] response error:', res.status, errText);
+      throw new Error(`HTTP ${res.status}`);
+    }
     const data = await res.json();
+    console.log('[checkUpdate] data:', data);
     const latest = data.tag_name ? data.tag_name.replace(/^v/, '') : null;
     if (!latest) throw new Error('获取版本失败');
 
@@ -100,11 +106,13 @@ async function checkUpdateNow() {
       checking = false;
     }, 2000);
   } catch (e) {
-    setText('检查失败');
+    console.error('[checkUpdate] error:', e);
+    const errMsg = e.message || '未知错误';
+    setText('失败:' + errMsg);
     setTimeout(() => {
       setText('检查更新');
       checking = false;
-    }, 2000);
+    }, 3000);
   }
 }
 
