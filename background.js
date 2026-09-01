@@ -26,17 +26,17 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 async function checkUpdate() {
   try {
     const current = chrome.runtime.getManifest().version;
-    const res = await fetch('https://api.github.com/repos/qimengcheng/anycomment-extension/releases/latest');
+    const res = await fetch('https://anycomment.qimengcheng-47e.workers.dev/api/extension/latest');
     if (!res.ok) return;
     const data = await res.json();
-    const latest = data.tag_name ? data.tag_name.replace(/^v/, '') : null;
+    const latest = data.version;
     if (!latest) return;
 
     const hasUpdate = compareVersion(latest, current) > 0;
     chrome.storage.local.set({
       update_available: hasUpdate,
       latest_version: latest,
-      update_url: data.html_url || 'https://github.com/qimengcheng/anycomment/releases',
+      update_url: data.url || 'https://github.com/qimengcheng/anycomment-extension/releases',
       last_check: Date.now(),
     });
 

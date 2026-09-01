@@ -69,20 +69,18 @@ async function checkUpdateNow() {
   setText('检查中...');
 
   try {
-    const res = await fetch('https://api.github.com/repos/qimengcheng/anycomment-extension/releases/latest', { cache: 'no-store' });
+    const res = await fetch(DEFAULT_SERVER + '/api/extension/latest', { cache: 'no-store' });
     console.log('[checkUpdate] status:', res.status, res.statusText);
     if (!res.ok) {
-      const errText = await res.text().catch(() => '');
-      console.error('[checkUpdate] response error:', res.status, errText);
       throw new Error(`HTTP ${res.status}`);
     }
     const data = await res.json();
     console.log('[checkUpdate] data:', data);
-    const latest = data.tag_name ? data.tag_name.replace(/^v/, '') : null;
+    const latest = data.version;
     if (!latest) throw new Error('获取版本失败');
 
     const hasUpdate = compareVersion(latest, currentVersion) > 0;
-    const updateUrl = data.html_url || 'https://github.com/qimengcheng/anycomment-extension/releases';
+    const updateUrl = data.url || 'https://github.com/qimengcheng/anycomment-extension/releases';
 
     // 保存到storage，供background自动检查和下次打开popup时读取
     chrome.storage.local.set({
