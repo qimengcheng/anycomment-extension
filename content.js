@@ -228,6 +228,208 @@
     pendingQuote = null;
   }
 
+  // ========== 划线评论第二期：网页文字定位与高亮 ==========
+
+  // 收集页面中所有可见文本节点（跳过 script/style/不可见元素）
+  function collectTextNodes(root = document.body) {
+    const nodes = [];
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        if (!node.textContent || !node.textContent.trim()) return NodeFilter.FILTER_REJECT;
+        const parent = node.parentElement;
+        if (!parent) return NodeFilter.FILTER_REJECT;
+        const tag = parent.tagName;
+        if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT' || tag === 'TEXTAREA' || tag === 'INPUT') return NodeFilter.FILTER_REJECT;
+        const style = window.getComputedStyle(parent);
+        if (style.display === 'none' || style.visibility === 'hidden' || style.opacity === '0') return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    });
+    let n;
+    while ((n = walker.nextNode())) nodes.push(n);
+    return nodes;
+  }
+
+  // 在单个文本节点中查找 quote_text，返回 { node, start, end } 或 null
+  function findInSingleNode(node, quoteText, before, after) {
+    const text = node.textContent;
+    const idx = text.indexOf(quoteText);
+    if (idx === -1) return null;
+    // 检查前后上下文（如果提供了）
+    if (before) {
+      const nodeBefore = text.slice(Math.max(0, idx - before.length), idx);
+      if (!nodeBefore.endsWith(before.slice(-Math.min(before.length, nodeBefore.length)))) {
+        // 上下文不匹配，继续查找下一个
+        return null;
+      }
+    }
+    if (after) {
+      const nodeAfter = text.slice(idx + quoteText.length, idx + quoteText.length + after.length);
+      if (!nodeAfter.startsWith(after.slice(0, Math.min(after.length, nodeAfter.length)))) {
+        return null;
+      }
+    }
+    return { node, start: idx, end: idx + quoteText.length };
+  }
+
+  // 跨节点查找 quote_text（文字被标签分割的情况）
+  function findAcrossNodes(textNodes, quoteText, before, after) {
+    // 拼接所有文本节点内容，同时记录每个字符对应的节点和偏移
+    let fullText = '';
+    const charMap = []; // { node, offset }
+    for (const node of textNodes) {
+      for (let i = 0; i < node.textContent.length; i++) {
+        fullText += node.textContent[i];
+        charMap.push({ node, offset: i });
+      }
+    }
+    const idx = fullText.indexOf(quoteText);
+    if (idx === -1) return null;
+    // 检查前后上下文
+    if (before) {
+      const fullBefore = fullText.slice(Math.max(0, idx - before.length), idx);
+      if (!fullBefore.endsWith(before.slice(-Math.min(before.length, fullBefore.length)))) return null;
+    }
+    if (after) {
+      const fullAfter = fullText.slice(idx + quoteText.length, idx + quoteText.length + after.length);
+      if (!fullAfter.startsWith(after.slice(0, Math.min(after.length, fullAfter.length)))) return null;
+    }
+    const startInfo = charMap[idx];
+    const endInfo = charMap[idx + quoteText.length - 1];
+    return {
+      startNode: startInfo.node,
+      startOffset: startInfo.offset,
+      endNode: endInfo.node,
+      endOffset: endInfo.offset + 1,
+    };
+  }
+
+  // 在页面中查找 quote 对应的 Range，返回 Range 或 null
+  function findQuoteRange(quote) {
+    const quoteText = quote.quote_text;
+    const before = quote.quote_before || null;
+    const after = quote.quote_after || null;
+    if (!quoteText) return null;
+
+    const textNodes = collectTextNodes();
+    if (textNodes.length === 0) return null;
+
+    // 先在单个节点中查找
+    for (const node of textNodes) {
+      const found = findInSingleNode(node, quoteText, before, after);
+      if (found) {
+        const range = document.createRange();
+        range.setStart(found.node, found.start);
+        range.setEnd(found.node, found.end);
+        return range;
+      }
+    }
+
+    // 单个节点找不到，尝试跨节点查找
+    const across = findAcrossNodes(textNodes, quoteText, before, after);
+    if (across) {
+      const range = document.createRange();
+      range.setStart(across.startNode, across.startOffset);
+      range.setEnd(across.endNode, across.endOffset);
+      return range;
+    }
+
+    return null;
+  }
+
+  // 高亮 Range 对应的文字，用 mark 标签包裹，返回创建的 mark 元素
+  function highlightRange(range, commentId = null) {
+    if (!range || range.collapsed) return null;
+    try {
+      const mark = document.createElement('mark');
+      mark.className = 'ac-quote-highlight';
+      if (commentId) mark.dataset.commentId = commentId;
+      mark.style.cssText = 'background: #fff3a8; color: inherit; padding: 1px 0; border-radius: 2px; cursor: pointer;';
+      range.surroundContents(mark);
+      return mark;
+    } catch (e) {
+      // surroundContents 在跨节点时可能失败，用 extractContents + insertNode 替代
+      try {
+        const mark = document.createElement('mark');
+        mark.className = 'ac-quote-highlight';
+        if (commentId) mark.dataset.commentId = commentId;
+        mark.style.cssText = 'background: #fff3a8; color: inherit; padding: 1px 0; border-radius: 2px; cursor: pointer;';
+        const contents = range.extractContents();
+        mark.appendChild(contents);
+        range.insertNode(mark);
+        return mark;
+      } catch (e2) {
+        return null;
+      }
+    }
+  }
+
+  // 滚动到 Range 对应的位置，居中显示
+  function scrollToRange(range) {
+    if (!range) return;
+    const rect = range.getBoundingClientRect();
+    if (!rect || (rect.width === 0 && rect.height === 0)) return;
+    const targetY = rect.top + window.scrollY - window.innerHeight / 2 + rect.height / 2;
+    window.scrollTo({ top: Math.max(0, targetY), behavior: 'smooth' });
+  }
+
+  // 划线评论第二期：点击评论引用，在网页中定位并高亮对应的划线文字
+  function focusQuoteInPage(quote) {
+    // 先清除之前的定位高亮（保留自动高亮的）
+    document.querySelectorAll('.ac-quote-focus').forEach((el) => {
+      const parent = el.parentNode;
+      if (parent) {
+        while (el.firstChild) parent.insertBefore(el.firstChild, el);
+        parent.removeChild(el);
+      }
+    });
+    const range = findQuoteRange(quote);
+    if (!range) {
+      // 找不到时用 Toast 提示
+      showExtToast('未在页面中找到对应的划线文字');
+      return;
+    }
+    const mark = highlightRange(range, quote.comment_id || null);
+    if (mark) {
+      mark.classList.add('ac-quote-focus');
+      mark.style.background = '#ffd54f';
+      mark.style.boxShadow = '0 0 0 2px #ffb300';
+      // 3 秒后恢复普通高亮样式
+      setTimeout(() => {
+        if (mark.parentNode) {
+          mark.style.background = '#fff3a8';
+          mark.style.boxShadow = 'none';
+          mark.classList.remove('ac-quote-focus');
+        }
+      }, 3000);
+    }
+    scrollToRange(range);
+  }
+
+  // 划线评论第二期：页面加载后自动高亮所有划线评论的引用文字
+  function highlightAllQuotes(quotes) {
+    if (!Array.isArray(quotes) || quotes.length === 0) return;
+    // 延迟执行，确保页面内容已渲染完成
+    setTimeout(() => {
+      for (const quote of quotes) {
+        if (!quote.quote_text) continue;
+        const range = findQuoteRange(quote);
+        if (range) {
+          highlightRange(range, quote.comment_id || null);
+        }
+      }
+    }, 500);
+  }
+
+  // 扩展内的简易 Toast 提示（不依赖 widget）
+  function showExtToast(message) {
+    const toast = document.createElement('div');
+    toast.style.cssText = 'position:fixed;top:20px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,0.8);color:#fff;padding:10px 20px;border-radius:8px;font-size:14px;z-index:2147483647;font-family:system-ui,sans-serif;';
+    toast.textContent = message;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 2500);
+  }
+
   // 检查当前网站是否在用户的自动打开列表中，是则自动展开侧边栏
   function checkAutoOpen() {
     chrome.storage.local.get({ ac_token: '' }, (r) => {
@@ -288,6 +490,12 @@
     } else if (d.type === 'AC_TOKEN_CLEAR') {
       // 退出登录，清除扩展存储的token
       chrome.storage.local.remove(['ac_token', 'ac_user']);
+    } else if (d.type === 'AC_QUOTE_FOCUS' && d.quote_text) {
+      // 划线评论第二期：点击评论引用，在网页中定位并高亮对应的划线文字
+      focusQuoteInPage(d);
+    } else if (d.type === 'AC_QUOTE_HIGHLIGHT_ALL' && Array.isArray(d.quotes)) {
+      // 划线评论第二期：页面加载后自动高亮所有划线评论的引用文字
+      highlightAllQuotes(d.quotes);
     }
   }
 
