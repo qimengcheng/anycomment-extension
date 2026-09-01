@@ -6,9 +6,10 @@
   const SERVER = 'https://anycomment.qimengcheng-47e.workers.dev';
   const serverOrigin = safeOrigin(SERVER);
 
-  let host, shadow, fab, badge, panel, iframe;
+  let host, shadow, fab, badge, panel, iframe, quoteBtn;
   let opened = false;
   let iframeReady = false;
+  let pendingQuote = null; // 划线评论：待提交的选中文字和上下文
   // URL 标记 #ac_c=<commentId>：从分享链接跳入时自动展开侧边栏并定位到该评论
   const shareFocusId = getUrlParam('ac_c');
 
@@ -66,11 +67,21 @@
     iframe.allow = 'clipboard-write';
     panel.appendChild(iframe);
 
-    shadow.append(style, fab, panel);
+    // 划线评论：选中文字后弹出的浮动评论按钮
+    quoteBtn = document.createElement('button');
+    quoteBtn.className = 'ac-quote-btn';
+    quoteBtn.title = '评论选中文字';
+    quoteBtn.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 2H4c-1.1 0-2 .9-2 2v18l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H6l-2 2V4h16v12z"/></svg><span>评论</span>`;
+    quoteBtn.style.display = 'none';
+
+    shadow.append(style, fab, panel, quoteBtn);
     document.documentElement.appendChild(host);
     badge = fab.querySelector('.ac-badge');
 
     fab.addEventListener('click', toggle);
+    quoteBtn.addEventListener('click', onQuoteComment);
+    document.addEventListener('mouseup', onTextSelect);
+    document.addEventListener('mousedown', () => { setTimeout(() => { quoteBtn.style.display = 'none'; }, 10); });
     window.addEventListener('message', onMessage);
     hookHistory();
     refreshBadge();
@@ -113,6 +124,103 @@
     } else {
       refreshBadge();
     }
+  }
+
+  // 划线评论：监听用户选中文字，在选区旁边弹出评论按钮
+  function onTextSelect() {
+    setTimeout(() => {
+      const sel = window.getSelection();
+      if (!sel || sel.isCollapsed || sel.rangeCount === 0) {
+        quoteBtn.style.display = 'none';
+        return;
+      }
+      const text = sel.toString().trim();
+      if (!text || text.length < 1) {
+        quoteBtn.style.display = 'none';
+        return;
+      }
+      // 限制选中文字长度，避免过长
+      if (text.length > 500) {
+        quoteBtn.style.display = 'none';
+        return;
+      }
+      const range = sel.getRangeAt(0);
+      const rect = range.getBoundingClientRect();
+      if (!rect || (rect.width === 0 && rect.height === 0)) {
+        quoteBtn.style.display = 'none';
+        return;
+      }
+      // 计算按钮位置：在选区上方居中
+      const btnWidth = 80;
+      const btnHeight = 32;
+      let left = rect.left + rect.width / 2 - btnWidth / 2 + window.scrollX;
+      let top = rect.top - btnHeight - 8 + window.scrollY;
+      // 防止超出视口
+      if (left < 8) left = 8;
+      if (left + btnWidth > window.innerWidth - 8) left = window.innerWidth - btnWidth - 8;
+      if (top < window.scrollY + 8) top = rect.bottom + 8 + window.scrollY;
+      quoteBtn.style.left = left + 'px';
+      quoteBtn.style.top = top + 'px';
+      quoteBtn.style.display = 'flex';
+      // 保存选中的文字和上下文，供点击评论按钮时使用
+      pendingQuote = {
+        text: text,
+        before: getContextBefore(range, 100),
+        after: getContextAfter(range, 100),
+      };
+    }, 10);
+  }
+
+  // 获取选区前的上下文文字
+  function getContextBefore(range, maxLen) {
+    try {
+      const container = range.startContainer;
+      const text = container.nodeType === Node.TEXT_NODE ? container.textContent : '';
+      const before = text ? text.slice(Math.max(0, range.startOffset - maxLen), range.startOffset) : '';
+      return before.trim();
+    } catch { return ''; }
+  }
+
+  // 获取选区后的上下文文字
+  function getContextAfter(range, maxLen) {
+    try {
+      const container = range.endContainer;
+      const text = container.nodeType === Node.TEXT_NODE ? container.textContent : '';
+      const after = text ? text.slice(range.endOffset, range.endOffset + maxLen) : '';
+      return after.trim();
+    } catch { return ''; }
+  }
+
+  // 划线评论：点击浮动评论按钮，打开侧边栏并发送选中文字给 widget
+  function onQuoteComment() {
+    if (!pendingQuote) return;
+    quoteBtn.style.display = 'none';
+    // 打开侧边栏
+    if (!opened) toggle();
+    // 等待 iframe 就绪后发送划线评论信息
+    const sendQuote = () => {
+      iframe.contentWindow?.postMessage({
+        type: 'AC_QUOTE',
+        quote_text: pendingQuote.text,
+        quote_before: pendingQuote.before,
+        quote_after: pendingQuote.after,
+      }, serverOrigin);
+    };
+    if (iframeReady) {
+      sendQuote();
+    } else {
+      // 等待 AC_READY 后再发送
+      const waitReady = (e) => {
+        if (e.origin === serverOrigin && e.data?.type === 'AC_READY') {
+          window.removeEventListener('message', waitReady);
+          setTimeout(sendQuote, 100);
+        }
+      };
+      window.addEventListener('message', waitReady);
+    }
+    // 清除选区
+    window.getSelection()?.removeAllRanges();
+    pendingQuote = null;
   }
 
   // 检查当前网站是否在用户的自动打开列表中，是则自动展开侧边栏
@@ -227,5 +335,15 @@
     }
     .ac-panel.open { transform: translateX(0); }
     .ac-panel iframe { width: 100%; height: 100%; border: none; display: block; }
+    .ac-quote-btn {
+      position: absolute; z-index: 2147483647;
+      display: flex; align-items: center; gap: 4px;
+      padding: 6px 12px; border-radius: 16px; border: none; cursor: pointer;
+      background: #4f6ef7; color: #fff; font: 600 12px/1 system-ui, sans-serif;
+      box-shadow: 0 4px 12px rgba(31,36,48,.25);
+      transition: transform .15s ease, box-shadow .15s ease;
+    }
+    .ac-quote-btn:hover { transform: scale(1.05); box-shadow: 0 6px 16px rgba(31,36,48,.3); }
+    .ac-quote-btn svg { width: 14px; height: 14px; fill: #fff; }
   `;
 })();

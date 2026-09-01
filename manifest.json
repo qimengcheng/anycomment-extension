@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AnyComment 网页评论",
-  "version": "1.20.0",
+  "version": "1.21.0",
   "description": "在任意网页右侧展开评论区，发表评论、回复他人、参与讨论。",
   "permissions": ["storage", "alarms", "downloads"],
   "host_permissions": ["https://api.github.com/*"],
