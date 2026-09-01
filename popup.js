@@ -37,10 +37,14 @@ function refreshUpdateUI() {
   });
 }
 
-// 下载更新按钮
+// 下载更新按钮：直接下载扩展zip，而不是打开Release页面
 $('downloadUpdate').addEventListener('click', () => {
-  chrome.storage.local.get({ update_url: 'https://github.com/qimengcheng/anycomment-extension/releases' }, (r) => {
-    chrome.tabs.create({ url: r.update_url });
+  chrome.storage.local.get({ download_url: '', update_url: 'https://github.com/qimengcheng/anycomment-extension/releases' }, (r) => {
+    if (r.download_url) {
+      chrome.downloads.download({ url: r.download_url });
+    } else {
+      chrome.tabs.create({ url: r.update_url });
+    }
   });
 });
 
@@ -87,6 +91,7 @@ async function checkUpdateNow() {
       update_available: hasUpdate,
       latest_version: latest,
       update_url: updateUrl,
+      download_url: data.download_url || '',
       last_check: Date.now(),
     });
 

@@ -37,6 +37,7 @@ async function checkUpdate() {
       update_available: hasUpdate,
       latest_version: latest,
       update_url: data.url || 'https://github.com/qimengcheng/anycomment-extension/releases',
+      download_url: data.download_url || '',
       last_check: Date.now(),
     });
 
