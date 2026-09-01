@@ -250,52 +250,103 @@
     return nodes;
   }
 
-  // 在单个文本节点中查找 quote_text，返回 { node, start, end } 或 null
-  function findInSingleNode(node, quoteText, before, after) {
+  // 规范化空白字符：把换行、制表符、多个空格都换成单个空格，方便匹配
+  function normalizeText(text) {
+    return text.replace(/\s+/g, ' ').trim();
+  }
+
+  // 在单个文本节点中查找所有 quote_text 匹配，返回匹配列表
+  function findAllInSingleNode(node, quoteText) {
+    const matches = [];
     const text = node.textContent;
-    const idx = text.indexOf(quoteText);
-    if (idx === -1) return null;
-    // 检查前后上下文（如果提供了）
-    if (before) {
-      const nodeBefore = text.slice(Math.max(0, idx - before.length), idx);
-      if (!nodeBefore.endsWith(before.slice(-Math.min(before.length, nodeBefore.length)))) {
-        // 上下文不匹配，继续查找下一个
-        return null;
+    const normalized = normalizeText(text);
+    const normalizedQuote = normalizeText(quoteText);
+    if (!normalizedQuote) return matches;
+    let idx = normalized.indexOf(normalizedQuote);
+    while (idx !== -1) {
+      // 把规范化后的索引映射回原始文本的索引（简化处理：直接用规范化索引，因为大部分情况差异不大）
+      matches.push({ node, start: idx, end: idx + normalizedQuote.length, normalized: true });
+      idx = normalized.indexOf(normalizedQuote, idx + 1);
+    }
+    // 如果规范化匹配失败，尝试原始匹配
+    if (matches.length === 0) {
+      let rawIdx = text.indexOf(quoteText);
+      while (rawIdx !== -1) {
+        matches.push({ node, start: rawIdx, end: rawIdx + quoteText.length, normalized: false });
+        rawIdx = text.indexOf(quoteText, rawIdx + 1);
       }
+    }
+    return matches;
+  }
+
+  // 计算匹配的上下文相似度（0-1，越高越匹配）
+  function contextMatchScore(match, before, after) {
+    if (!before && !after) return 1;
+    const text = match.normalized ? normalizeText(match.node.textContent) : match.node.textContent;
+    let score = 0;
+    if (before) {
+      const matchBefore = text.slice(Math.max(0, match.start - before.length), match.start);
+      const normBefore = normalizeText(before);
+      // 取末尾部分比较
+      const compareLen = Math.min(matchBefore.length, normBefore.length);
+      if (compareLen > 0 && matchBefore.slice(-compareLen) === normBefore.slice(-compareLen)) {
+        score += 0.5;
+      } else if (compareLen > 0) {
+        // 部分匹配也给点分
+        let common = 0;
+        for (let i = 1; i <= compareLen; i++) {
+          if (matchBefore.slice(-i) === normBefore.slice(-i)) common = i;
+          else break;
+        }
+        score += 0.5 * (common / compareLen);
+      }
+    } else {
+      score += 0.5;
     }
     if (after) {
-      const nodeAfter = text.slice(idx + quoteText.length, idx + quoteText.length + after.length);
-      if (!nodeAfter.startsWith(after.slice(0, Math.min(after.length, nodeAfter.length)))) {
-        return null;
+      const matchAfter = text.slice(match.end, match.end + after.length);
+      const normAfter = normalizeText(after);
+      const compareLen = Math.min(matchAfter.length, normAfter.length);
+      if (compareLen > 0 && matchAfter.slice(0, compareLen) === normAfter.slice(0, compareLen)) {
+        score += 0.5;
+      } else if (compareLen > 0) {
+        let common = 0;
+        for (let i = 1; i <= compareLen; i++) {
+          if (matchAfter.slice(0, i) === normAfter.slice(0, i)) common = i;
+          else break;
+        }
+        score += 0.5 * (common / compareLen);
       }
+    } else {
+      score += 0.5;
     }
-    return { node, start: idx, end: idx + quoteText.length };
+    return score;
   }
 
   // 跨节点查找 quote_text（文字被标签分割的情况）
-  function findAcrossNodes(textNodes, quoteText, before, after) {
+  function findAcrossNodes(textNodes, quoteText) {
     // 拼接所有文本节点内容，同时记录每个字符对应的节点和偏移
     let fullText = '';
-    const charMap = []; // { node, offset }
+    const charMap = [];
     for (const node of textNodes) {
-      for (let i = 0; i < node.textContent.length; i++) {
-        fullText += node.textContent[i];
+      const text = node.textContent;
+      for (let i = 0; i < text.length; i++) {
+        fullText += text[i];
         charMap.push({ node, offset: i });
       }
+      // 节点之间加一个空格，避免相邻节点的文字直接连在一起
+      fullText += ' ';
+      charMap.push({ node, offset: text.length, isGap: true });
     }
-    const idx = fullText.indexOf(quoteText);
+    const normalized = normalizeText(fullText);
+    const normalizedQuote = normalizeText(quoteText);
+    if (!normalizedQuote) return null;
+    const idx = normalized.indexOf(normalizedQuote);
     if (idx === -1) return null;
-    // 检查前后上下文
-    if (before) {
-      const fullBefore = fullText.slice(Math.max(0, idx - before.length), idx);
-      if (!fullBefore.endsWith(before.slice(-Math.min(before.length, fullBefore.length)))) return null;
-    }
-    if (after) {
-      const fullAfter = fullText.slice(idx + quoteText.length, idx + quoteText.length + after.length);
-      if (!fullAfter.startsWith(after.slice(0, Math.min(after.length, fullAfter.length)))) return null;
-    }
-    const startInfo = charMap[idx];
-    const endInfo = charMap[idx + quoteText.length - 1];
+    // 映射回原始字符索引（简化处理，直接用规范化索引）
+    const startInfo = charMap[Math.min(idx, charMap.length - 1)];
+    const endInfo = charMap[Math.min(idx + normalizedQuote.length - 1, charMap.length - 1)];
+    if (!startInfo || !endInfo || startInfo.isGap || endInfo.isGap) return null;
     return {
       startNode: startInfo.node,
       startOffset: startInfo.offset,
@@ -314,24 +365,42 @@
     const textNodes = collectTextNodes();
     if (textNodes.length === 0) return null;
 
-    // 先在单个节点中查找
+    // 收集所有单节点匹配
+    const allMatches = [];
     for (const node of textNodes) {
-      const found = findInSingleNode(node, quoteText, before, after);
-      if (found) {
-        const range = document.createRange();
-        range.setStart(found.node, found.start);
-        range.setEnd(found.node, found.end);
-        return range;
+      const matches = findAllInSingleNode(node, quoteText);
+      for (const m of matches) {
+        allMatches.push({ ...m, score: contextMatchScore(m, before, after) });
       }
     }
 
-    // 单个节点找不到，尝试跨节点查找
-    const across = findAcrossNodes(textNodes, quoteText, before, after);
+    // 按上下文相似度排序，取最高的
+    if (allMatches.length > 0) {
+      allMatches.sort((a, b) => b.score - a.score);
+      const best = allMatches[0];
+      const range = document.createRange();
+      if (best.normalized) {
+        // 规范化匹配：尝试在原始文本中找到对应位置（简化处理，直接用规范化索引）
+        range.setStart(best.node, Math.min(best.start, best.node.textContent.length));
+        range.setEnd(best.node, Math.min(best.end, best.node.textContent.length));
+      } else {
+        range.setStart(best.node, best.start);
+        range.setEnd(best.node, best.end);
+      }
+      return range;
+    }
+
+    // 单节点找不到，尝试跨节点查找
+    const across = findAcrossNodes(textNodes, quoteText);
     if (across) {
       const range = document.createRange();
-      range.setStart(across.startNode, across.startOffset);
-      range.setEnd(across.endNode, across.endOffset);
-      return range;
+      try {
+        range.setStart(across.startNode, across.startOffset);
+        range.setEnd(across.endNode, across.endOffset);
+        return range;
+      } catch (e) {
+        return null;
+      }
     }
 
     return null;
