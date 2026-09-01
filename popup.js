@@ -56,9 +56,18 @@ function compareVersion(a, b) {
 }
 
 // 手动检查更新（直接在popup里调用API，不依赖background消息传递）
+let checking = false;
 async function checkUpdateNow() {
-  $('checkUpdateNow').textContent = '检查中...';
-  $('checkUpdateNow').disabled = true;
+  if (checking) return;
+  checking = true;
+
+  // 同时更新底部链接和提示条里的按钮
+  const setText = (text) => {
+    if ($('checkLink')) $('checkLink').textContent = text;
+    if ($('checkUpdateNow')) $('checkUpdateNow').textContent = text;
+  };
+  setText('检查中...');
+
   try {
     const res = await fetch('https://api.github.com/repos/qimengcheng/anycomment-extension/releases/latest', { cache: 'no-store' });
     if (!res.ok) throw new Error('网络错误');
@@ -81,20 +90,20 @@ async function checkUpdateNow() {
     if (hasUpdate) {
       $('updateBar').classList.add('show');
       $('latestVersion').textContent = latest;
-      $('checkUpdateNow').textContent = '发现新版本';
+      setText('发现新版本');
     } else {
       $('updateBar').classList.remove('show');
-      $('checkUpdateNow').textContent = '已是最新';
+      setText('已是最新');
     }
     setTimeout(() => {
-      $('checkUpdateNow').textContent = '检查更新';
-      $('checkUpdateNow').disabled = false;
+      setText('检查更新');
+      checking = false;
     }, 2000);
   } catch (e) {
-    $('checkUpdateNow').textContent = '检查失败';
+    setText('检查失败');
     setTimeout(() => {
-      $('checkUpdateNow').textContent = '检查更新';
-      $('checkUpdateNow').disabled = false;
+      setText('检查更新');
+      checking = false;
     }, 2000);
   }
 }
