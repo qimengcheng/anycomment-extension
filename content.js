@@ -510,7 +510,12 @@
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
           if (!data || !Array.isArray(data.sites)) return;
-          const match = data.sites.some((s) => s.site_domain && s.enabled !== false && currentDomain === s.site_domain.toLowerCase());
+          // 子域名也匹配：存 google.com 时 www.google.com / docs.google.com 都命中（精确相等或 .domain 结尾）
+          const match = data.sites.some((s) => {
+            if (!s.site_domain || s.enabled === false) return false;
+            const d = s.site_domain.toLowerCase();
+            return currentDomain === d || currentDomain.endsWith('.' + d);
+          });
           if (match) {
             // 延迟一点打开，确保 iframe 预加载完成
             setTimeout(() => { if (!opened) toggle(); }, 500);
