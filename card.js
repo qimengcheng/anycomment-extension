@@ -414,7 +414,14 @@
     root.appendChild(style);
   }
 
-  // 预览浮层：下载 / 复制到剪贴板 / 关闭
+  // 把 dataURL 写入剪贴板：自动复制与手动按钮共用同一个写流程，失败时按钮文字保持原样以便手动重试
+  function copyImageToClipboard(dataUrl) {
+    const b64 = dataUrl.split(',')[1];
+    const bytes = Uint8Array.from(atob(b64), (ch) => ch.charCodeAt(0));
+    return navigator.clipboard.write([new ClipboardItem({ 'image/png': new Blob([bytes], { type: 'image/png' }) })]);
+  }
+
+  // 预览浮层：下载 / 复制到剪贴板 / 关闭；弹出即尝试自动复制，HTTP 站点/权限拒绝时静默降级到手动按钮
   function showPreview(root, dataUrl, opts = {}) {
     ensurePreviewStyle(root);
     root.querySelector('.ac-share-mask')?.remove();
@@ -440,12 +447,15 @@
     const btnCopy = document.createElement('button');
     btnCopy.className = 'ac-share-btn ac-share-ghost';
     btnCopy.textContent = '复制图片';
+    // 弹出即尝试自动复制：选区/视口截图与划线分享共用同一流程，用户不再需要手动点击
+    // 注意：必须在 user gesture 同帧内调用（这里是同步链路里启动，Chrome 把它视作 transient）
+    copyImageToClipboard(dataUrl).then(
+      () => { if (btnCopy.isConnected) btnCopy.textContent = '已复制 ✓'; },
+      () => { /* 静默失败：按钮保持「复制图片」由用户主动重试，HTTP/无权限场景仍可用 */ },
+    );
     btnCopy.addEventListener('click', async () => {
       try {
-        // dataURL → Blob（content script 里 fetch(data:) 在部分环境被禁，手动解码更稳）
-        const b64 = dataUrl.split(',')[1];
-        const bytes = Uint8Array.from(atob(b64), (ch) => ch.charCodeAt(0));
-        await navigator.clipboard.write([new ClipboardItem({ 'image/png': new Blob([bytes], { type: 'image/png' }) })]);
+        await copyImageToClipboard(dataUrl);
         btnCopy.textContent = '已复制 ✓';
       } catch {
         btnCopy.textContent = '复制失败，请下载';

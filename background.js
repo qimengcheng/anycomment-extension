@@ -47,7 +47,19 @@ function flashBadgeError(tabId) {
 // 注意不要拿 Page.getLayoutMetrics 的 cssVisualViewport 反过来纠正 clip：实测它的
 // clientWidth/clientHeight 不含滚动条，且 attach 后调试横幅还会再把视口压矮约 47px，
 // 用它重算会得到一张比用户按快捷键时更小（右侧少一条）的图。
+//
+// selection / viewport 默认走 chrome.tabs.captureVisibleTab：不 attach debugger、不弹顶部
+// 「AnyComment 网页评论 已开始调试此浏览器」横幅，框选由 content 侧 cropToClip 按 clip 裁。
+// 整页（屏外）必须 CDP；captureVisibleTab 在受限页面被拒时也兜底走 CDP（会弹横幅，但比截不上强）。
 async function runCapture({ tabId, windowId, mode, clip, dpr = 1, vh = 0 }) {
+  if (mode !== 'fullpage' && windowId !== undefined) {
+    try {
+      const url = await chrome.tabs.captureVisibleTab(windowId, { format: 'png' });
+      const data = String(url).split(',')[1] || '';
+      if (data) return { ok: true, data, via: 'visible', clip };
+      // 空数据走下面的 CDP 兜底
+    } catch { /* captureVisibleTab 被拒，降级到 CDP */ }
+  }
   const target = { tabId };
   let attached = false;
   let override = false;
@@ -76,15 +88,7 @@ async function runCapture({ tabId, windowId, mode, clip, dpr = 1, vh = 0 }) {
     });
     return { ok: true, data: shot.data, via: 'cdp', clip };
   } catch (e) {
-    const err = classifyCaptureError(e);
-    // 视口/框选退回 captureVisibleTab（只能拿当前可见区域，content 侧再按 k 裁剪）
-    if (mode !== 'fullpage' && windowId !== undefined) {
-      try {
-        const url = await chrome.tabs.captureVisibleTab(windowId, { format: 'png' });
-        return { ok: true, data: String(url).split(',')[1] || '', via: 'visible', clip };
-      } catch { /* 用 CDP 的错误文案返回 */ }
-    }
-    return { ok: false, error: err, via: 'none' };
+    return { ok: false, error: classifyCaptureError(e), via: 'none' };
   } finally {
     if (override) {
       try { await chrome.debugger.sendCommand(target, 'Emulation.clearDeviceMetricsOverride'); } catch { /* 已断开 */ }
