@@ -6,7 +6,7 @@
     shot_qr: true,
     shot_time: true,
     shot_brand: true,
-    shot_qr_overlay: true,
+    shot_qr_overlay: false, // 默认放图片下方的边栏；true 则把二维码压在图上
     shot_qr_corner: 'br', // tl | tr | bl | br，仅覆盖模式生效
     shot_default_mode: 'viewport', // selection | viewport | fullpage
   };
@@ -81,6 +81,31 @@
     return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())}`;
   }
 
+  // 渐变底 + 两个装饰圆：金句卡片与截图卡片共用同一套背景。
+  // s=1 时与金句卡片原画法逐像素一致，截图合成传入整图外接尺寸与版式尺度
+  function paintBackdrop(ctx, W, H, s = 1) {
+    const bg = ctx.createLinearGradient(0, 0, W, H);
+    bg.addColorStop(0, '#eef3ff');
+    bg.addColorStop(1, '#f9fbff');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, W, H);
+    ctx.fillStyle = 'rgba(79,110,247,0.08)';
+    ctx.beginPath(); ctx.arc(W - 40 * s, 40 * s, 130 * s, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(47,107,255,0.06)';
+    ctx.beginPath(); ctx.arc(30 * s, H - 30 * s, 100 * s, 0, Math.PI * 2); ctx.fill();
+  }
+
+  function paintWhiteCard(ctx, x, y, w, h, r, blur, offY, shadow = 'rgba(31,36,48,0.10)') {
+    ctx.save();
+    ctx.shadowColor = shadow;
+    ctx.shadowBlur = blur;
+    ctx.shadowOffsetY = offY;
+    ctx.fillStyle = '#ffffff';
+    roundRectPath(ctx, x, y, w, h, r);
+    ctx.fill();
+    ctx.restore();
+  }
+
   // 用 Canvas 绘制金句卡片，返回 dataURL(2x)
   function drawShareCard({ text, title, site, url }) {
     const W = 720, PAD = 56, DPR = 2;
@@ -112,33 +137,10 @@
     const ctx = canvas.getContext('2d');
     ctx.scale(DPR, DPR);
 
-    // 渐变底 + 装饰圆
-    const bg = ctx.createLinearGradient(0, 0, W, H);
-    bg.addColorStop(0, '#eef3ff');
-    bg.addColorStop(1, '#f9fbff');
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = 'rgba(79,110,247,0.08)';
-    ctx.beginPath(); ctx.arc(W - 40, 40, 130, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = 'rgba(47,107,255,0.06)';
-    ctx.beginPath(); ctx.arc(30, H - 30, 100, 0, Math.PI * 2); ctx.fill();
-
-    // 白色圆角卡片
+    // 渐变底 + 装饰圆 + 白色圆角卡片
     const cx = 28, cy = 28, cw = W - 56, ch = H - 56, r = 20;
-    ctx.save();
-    ctx.shadowColor = 'rgba(31,36,48,0.10)';
-    ctx.shadowBlur = 24;
-    ctx.shadowOffsetY = 8;
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath();
-    ctx.moveTo(cx + r, cy);
-    ctx.arcTo(cx + cw, cy, cx + cw, cy + ch, r);
-    ctx.arcTo(cx + cw, cy + ch, cx, cy + ch, r);
-    ctx.arcTo(cx, cy + ch, cx, cy, r);
-    ctx.arcTo(cx, cy, cx + cw, cy, r);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
+    paintBackdrop(ctx, W, H);
+    paintWhiteCard(ctx, cx, cy, cw, ch, r, 24, 8);
 
     // 顶部品牌条：蓝点 + AnyComment 划线分享
     ctx.fillStyle = '#2f6bff';
@@ -204,53 +206,85 @@
 
   // ========== 网页截图合成 ==========
   // 坐标一律在"图像自然像素空间"计算（不做 ctx.scale(DPR)，输出倍率由 CDP 的 dpr×clip.scale 决定）。
-  // 尺度基准 u：以 1920 宽为 1 号，字号/留白都乘 u，二维码模块边长仍取整像素（同金句卡片规则）。
-  // 小尺寸框选时底板会吃掉画面主体，所以候选尺度从基准逐级 ×0.75 试到"不越界"为止。
+  // 版式：截图外面整圈套上金句卡片同款的渐变底 + 白色圆角卡，品牌与拍摄时间同行两端对齐走在图片
+  // 上方的白色留白里，二维码默认走在图片下方的白色留白里（可选压在图上四角），所以输出必然比原图大。
+  // 小尺寸框选放不下时，候选尺度从基准逐级 ×0.75 试到放得下二维码为止，仍放不下就只留文字。
   const SHOT_BRAND = 'AnyComment · 网页截图';
+  const SHOT_QR_HINT = '扫码阅读原文';
   const QR_QUIET = 2;
 
-  function planShot({ s, W, H, brand, when, qrTotal, overlay, corner }) {
+  function planShot({ s, W, H, brand, when, qr, overlay, corner }) {
     const meas = measureCtx();
-    const fs1 = Math.max(8, Math.round(15 * s));
-    const fs2 = Math.max(7, Math.round(13 * s));
-    const pad = Math.max(4, Math.round(14 * s));
-    const inset = Math.max(6, Math.round(16 * s));
-    const radius = Math.max(4, Math.round(8 * s));
-    const gap = Math.max(4, Math.round(10 * s));
-    const lh1 = Math.round(fs1 * 1.3);
-    const lh2 = Math.round(fs2 * 1.3);
-    const dotR = Math.max(2, Math.round(fs1 * 0.36));
-    const dotGap = Math.max(3, Math.round(6 * s));
+    const fs1 = Math.max(13, Math.round(22 * s)); // 品牌
+    const fs2 = Math.max(11, Math.round(18 * s)); // 拍摄时间
+    const fs3 = Math.max(10, Math.round(15 * s)); // 二维码提示文字
+    const M = Math.max(6, Math.round(22 * s)); // 渐变底外圈
+    const P = Math.max(5, Math.round(14 * s)); // 白卡内边距
+    const gap = Math.max(4, Math.round(8 * s));
+    const hintGap = Math.max(6, Math.round(12 * s));
+    const radius = Math.max(6, Math.round(16 * s));
+    const imgRadius = Math.max(3, Math.round(9 * s));
+    const lh1 = Math.round(fs1 * 1.35);
+    const lh3 = Math.round(fs3 * 1.45);
+    const dotR = Math.max(3, Math.round(fs1 * 0.34));
+    const dotGap = Math.max(4, Math.round(8 * s));
+    const dotW = dotR * 2 + dotGap;
+
+    // 二维码模块边长仍取整像素（同金句卡片规则），目标边长约 180 号字高
+    const qrTotal = qr ? qr.getModuleCount() + QR_QUIET * 2 : 0;
+    const cell = qrTotal ? Math.max(1, Math.min(8, Math.round((180 * s) / qrTotal))) : 0;
+    const qrPx = cell * qrTotal;
+
+    const headH = brand || when ? lh1 + P : 0;
+    const outW = W + (M + P) * 2;
+    const cardX = M, cardY = M, cardW = outW - M * 2;
+    const imgX = M + P, imgY = M + P + headH;
+    const textCx = cardX + P, textRight = cardX + cardW - P;
+    const rowY = cardY + P + lh1 / 2;
+
     meas.font = fontMain(fs1, 600);
-    const wBrand = brand ? dotR * 2 + dotGap + meas.measureText(brand).width : 0;
+    const wBrand = brand ? meas.measureText(brand).width : 0;
     meas.font = fontMain(fs2, 400);
     const wWhen = when ? meas.measureText(when).width : 0;
-    const textW = Math.max(wBrand, wWhen);
-    const textH = (brand ? lh1 : 0) + (when ? lh2 : 0);
-    const base = { s, fs1, fs2, pad, inset, radius, gap, lh1, lh2, dotR, dotGap, textW, textH };
+    // 两端对齐：装得下各走各的贴边；装不下先牺牲时间（标识是主体），品牌仍超宽才在自身行内截断
+    const sep = brand && when ? gap * 2 : 0;
+    const dotRoom = brand ? dotW : 0;
+    const keepWhen = !(brand && when) || dotRoom + wBrand + sep + wWhen <= W;
+    const maxBrand = brand ? Math.max(0, W - dotRoom - (keepWhen ? sep + wWhen : 0)) : 0;
+    const maxWhen = when ? (keepWhen ? Math.max(0, W - dotRoom - maxBrand - sep) : 0) : 0;
 
-    if (overlay) {
-      const cell = qrTotal ? Math.max(1, Math.round(4 * s)) : 0;
-      const qrPx = cell * qrTotal;
-      const w = pad * 2 + textW + (qrPx ? gap + qrPx : 0);
-      const h = pad * 2 + Math.max(textH, qrPx);
-      const fits = w + inset * 2 <= W * 0.94 && h + inset * 2 <= Math.max(40, H * 0.55);
-      const x = corner === 'tl' || corner === 'bl' ? inset : W - inset - w;
-      const y = corner === 'tl' || corner === 'tr' ? inset : H - inset - h;
-      const qx = x + w - pad - qrPx;
-      const qy = y + (h - qrPx) / 2;
-      return { ...base, mode: 'overlay', fits, x, y, w, h, cell, qrPx, qx, qy, textMax: w - pad * 2 - (qrPx ? gap + qrPx : 0) };
+    const base = {
+      s, fs1, fs2, fs3, M, P, gap, hintGap, radius, imgRadius, lh1, lh3, dotR, dotGap, dotW,
+      outW, cardX, cardY, cardW, imgX, imgY, textCx, textRight, rowY, headH, cell, qrPx, maxBrand, maxWhen,
+    };
+    const bodyH = headH + H + P * 2;
+    if (!qr) {
+      return { ...base, mode: 'none', footH: 0, cardH: bodyH, outH: bodyH + M * 2, fits: true, qx: 0, qy: 0 };
     }
-    const stripH = Math.max(18, Math.round(64 * s));
-    const room = stripH - Math.max(2, Math.round(5 * s)) * 2;
-    const cell = qrTotal ? Math.max(0, Math.floor(room / qrTotal)) : 0; // 放不下二维码就只留文字
-    const qrPx = cell * qrTotal;
-    const fits = stripH <= Math.max(40, H * 0.5);
+    if (overlay) {
+      // 压在图上：白底板装二维码 + 提示文字，整块按所选角内缩在截图范围内
+      const bp = Math.max(4, Math.round(12 * s));
+      meas.font = fontMain(fs3, 400);
+      // 极小框选时二维码会比提示文字还窄，底板按更宽的那一项算，免得文字戳出板外
+      const blockW = Math.max(qrPx, meas.measureText(SHOT_QR_HINT).width);
+      const bw = bp * 2 + blockW;
+      const bh = bp * 2 + qrPx + hintGap + lh3;
+      const inset = Math.max(6, Math.round(16 * s));
+      const bx = imgX + (corner === 'tl' || corner === 'bl' ? inset : Math.max(inset, W - inset - bw));
+      const by = imgY + (corner === 'tl' || corner === 'tr' ? inset : Math.max(inset, H - inset - bh));
+      return {
+        ...base, mode: 'overlay', footH: 0, cardH: bodyH, outH: bodyH + M * 2,
+        bp, bw, bh, inset, bx, by, qx: bx + bp + Math.round((blockW - qrPx) / 2), qy: by + bp,
+        fits: bw + inset * 2 <= W * 0.94 && bh + inset * 2 <= Math.max(40, H * 0.6),
+      };
+    }
+    // 不覆盖：白卡往下再扩一段，二维码整块走在截图下方，一点画面都不遮
+    const footH = P + qrPx + hintGap + lh3;
+    const cardH = bodyH + footH;
     return {
-      ...base, mode: 'strip', fits, stripH, cell, qrPx,
-      // 白底静默区会比二维码本身外扩 gap，右边界要按外扩后的尺寸留白
-      qx: W - pad - qrPx - (qrPx ? gap : 0), qy: H + (stripH - qrPx) / 2,
-      textMax: W - pad * 2 - (qrPx ? gap + qrPx : 0),
+      ...base, mode: 'footer', footH, cardH, outH: cardH + M * 2,
+      qx: Math.round(textCx + (W - qrPx) / 2), qy: imgY + H + P,
+      fits: qrPx <= W,
     };
   }
 
@@ -271,75 +305,72 @@
     const when = o.shot_time ? fmtShotTime(time) : '';
     if (!qr && !brand && !when) return dataUrl;
 
-    const overlay = o.shot_qr_overlay !== false;
+    const overlay = o.shot_qr_overlay === true;
     const corner = ['tl', 'tr', 'bl', 'br'].includes(o.shot_qr_corner) ? o.shot_qr_corner : 'br';
-    const qrTotal = qr ? qr.getModuleCount() + QR_QUIET * 2 : 0;
 
     let plan = null;
     for (let s = Math.max(0.55, W / 1920); s >= 0.18; s *= 0.75) {
-      plan = planShot({ s, W, H, brand, when, qrTotal, overlay, corner });
+      plan = planShot({ s, W, H, brand, when, qr, overlay, corner });
       if (plan.fits) break;
     }
     if (!plan || !plan.fits) {
-      // 最小尺度仍放不下二维码：放弃二维码，只保留文字
-      plan = planShot({ s: 0.18, W, H, brand, when, qrTotal: 0, overlay, corner });
-      if (!plan.fits) return dataUrl;
+      // 最小尺度仍放不下二维码：放弃二维码，只保留顶部品牌与时间
+      plan = planShot({ s: 0.18, W, H, brand, when, qr: null, overlay, corner });
     }
 
-    const outW = W;
-    const outH = plan.mode === 'strip' ? H + plan.stripH : H;
     const canvas = document.createElement('canvas');
-    canvas.width = outW;
-    canvas.height = outH;
+    canvas.width = plan.outW;
+    canvas.height = plan.outH;
     const ctx = canvas.getContext('2d');
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.drawImage(img, 0, 0, W, H);
+    paintBackdrop(ctx, plan.outW, plan.outH, plan.s);
+    paintWhiteCard(
+      ctx, plan.cardX, plan.cardY, plan.cardW, plan.cardH, plan.radius,
+      Math.max(6, Math.round(24 * plan.s)), Math.max(2, Math.round(8 * plan.s))
+    );
 
-    if (plan.mode === 'strip') {
-      ctx.fillStyle = '#f7f8fc';
-      ctx.fillRect(0, H, outW, plan.stripH);
-      ctx.fillStyle = '#eceef4';
-      ctx.fillRect(0, H, outW, 1); // 顶边线，分隔原图与底栏
-    } else {
-      ctx.save();
-      ctx.shadowColor = 'rgba(31,36,48,0.18)';
-      ctx.shadowBlur = Math.max(3, Math.round(12 * plan.s));
-      ctx.shadowOffsetY = Math.max(1, Math.round(2 * plan.s));
-      ctx.fillStyle = '#ffffff';
-      roundRectPath(ctx, plan.x, plan.y, plan.w, plan.h, plan.radius);
-      ctx.fill();
-      ctx.restore();
-    }
+    // 截图裁成圆角贴在白卡上，再描一圈淡边，免得浅色画面与白卡糊成一片
+    ctx.save();
+    roundRectPath(ctx, plan.imgX, plan.imgY, W, H, plan.imgRadius);
+    ctx.clip();
+    ctx.drawImage(img, plan.imgX, plan.imgY, W, H);
+    ctx.restore();
+    ctx.strokeStyle = '#e6e9f2';
+    ctx.lineWidth = Math.max(1, Math.round(plan.s));
+    roundRectPath(ctx, plan.imgX, plan.imgY, W, H, plan.imgRadius);
+    ctx.stroke();
 
-    // 二维码：整像素模块 + 纯白静默区（底栏是浅灰，必须垫白底，否则对比度不足扫不出）
-    if (qr && plan.cell > 0) {
-      // 底栏里二维码几乎占满栏高，白底外扩会糊到原图首行，必须夹在底栏内
-      const hy = plan.mode === 'strip' ? Math.max(H, plan.qy - plan.gap) : plan.qy - plan.gap;
-      ctx.fillStyle = '#ffffff';
-      ctx.fillRect(plan.qx - plan.gap, hy, plan.qrPx + plan.gap * 2, plan.qy + plan.qrPx + plan.gap - hy);
-      drawQrModules(ctx, qr, plan.qx, plan.qy, plan.cell, QR_QUIET);
-    }
-
-    // 品牌行 + 时间行：左列顶部起排，整体在可用高度里垂直居中，超宽只在自身行内截断
-    const textX = plan.mode === 'strip' ? plan.pad : plan.x + plan.pad;
-    const textTop = plan.mode === 'strip' ? H + (plan.stripH - plan.textH) / 2 : plan.y + (plan.h - plan.textH) / 2;
+    // 顶部留白：蓝点 + 品牌靠左，拍摄时间靠右，同一行两端对齐
     ctx.textBaseline = 'middle';
-    let ty = textTop;
     if (brand) {
       ctx.fillStyle = '#2f6bff';
       ctx.beginPath();
-      ctx.arc(textX + plan.dotR, ty + plan.lh1 / 2, plan.dotR, 0, Math.PI * 2);
+      ctx.arc(plan.textCx + plan.dotR, plan.rowY, plan.dotR, 0, Math.PI * 2);
       ctx.fill();
       ctx.font = fontMain(plan.fs1, 600);
       ctx.fillStyle = '#1f2430';
-      const t = wrapText(ctx, brand, plan.textMax - plan.dotR * 2 - plan.dotGap, 1)[0] || '';
-      ctx.fillText(t, textX + plan.dotR * 2 + plan.dotGap, ty + plan.lh1 / 2);
-      ty += plan.lh1;
+      ctx.fillText(wrapText(ctx, brand, plan.maxBrand, 1)[0] || '', plan.textCx + plan.dotW, plan.rowY);
     }
-    if (when) {
+    if (when && plan.maxWhen > 0) {
       ctx.font = fontMain(plan.fs2, 400);
       ctx.fillStyle = '#8a90a5';
-      ctx.fillText(wrapText(ctx, when, plan.textMax, 1)[0] || '', textX, ty + plan.lh2 / 2);
+      const t = wrapText(ctx, when, plan.maxWhen, 1)[0] || '';
+      ctx.fillText(t, plan.textRight - ctx.measureText(t).width, plan.rowY);
+    }
+
+    // 二维码：整像素模块 + 下方提示文字。底就是白卡/白底板，不必再垫白底
+    if (qr && plan.cell > 0) {
+      if (plan.mode === 'overlay') {
+        paintWhiteCard(
+          ctx, plan.bx, plan.by, plan.bw, plan.bh, plan.radius,
+          Math.max(3, Math.round(12 * plan.s)), Math.max(1, Math.round(2 * plan.s)), 'rgba(31,36,48,0.18)'
+        );
+      }
+      drawQrModules(ctx, qr, plan.qx, plan.qy, plan.cell, QR_QUIET);
+      ctx.font = fontMain(plan.fs3, 400);
+      ctx.fillStyle = '#a5abc0';
+      const hintW = ctx.measureText(SHOT_QR_HINT).width;
+      ctx.fillText(SHOT_QR_HINT, plan.qx + (plan.qrPx - hintW) / 2, plan.qy + plan.qrPx + plan.hintGap + plan.lh3 / 2);
     }
 
     return canvas.toDataURL('image/png');
@@ -435,6 +466,8 @@
     buildQrMatrix,
     roundRectPath,
     drawQrModules,
+    paintBackdrop,
+    paintWhiteCard,
     fmtShotTime,
     drawShareCard,
     composeScreenshot,
