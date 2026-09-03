@@ -381,6 +381,9 @@
   const PREVIEW_CSS = `
     .ac-share-mask {
       position: fixed; inset: 0; z-index: 2147483647;
+      /* capture.js 的宿主是 pointer-events:none（平时不挡页面鼠标），继承会让整个浮层收不到
+         任何点击、三个按钮全部失效且永远关不掉（表现为页面"卡死"），这里必须显式恢复 */
+      pointer-events: auto;
       background: rgba(15,18,28,.55);
       display: flex; align-items: center; justify-content: center;
       font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
@@ -451,11 +454,18 @@
     const btnClose = document.createElement('button');
     btnClose.className = 'ac-share-btn ac-share-close';
     btnClose.textContent = '关闭';
-    btnClose.addEventListener('click', () => mask.remove());
+    // 关闭统一走 close()：顺带移除 Esc 监听，避免浮层关了监听还在
+    const onKey = (e) => { if (e.key === 'Escape') close(); };
+    window.addEventListener('keydown', onKey, true);
+    function close() {
+      mask.remove();
+      window.removeEventListener('keydown', onKey, true);
+    }
+    btnClose.addEventListener('click', close);
     acts.append(btnDl, btnCopy, btnClose);
     box.append(img, acts);
     mask.append(box);
-    mask.addEventListener('click', (e) => { if (e.target === mask) mask.remove(); });
+    mask.addEventListener('click', (e) => { if (e.target === mask) close(); });
     root.appendChild(mask);
   }
 
