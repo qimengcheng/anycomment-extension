@@ -122,5 +122,18 @@ async function checkUpdateNow() {
 $('checkUpdateNow').addEventListener('click', checkUpdateNow);
 $('checkLink').addEventListener('click', checkUpdateNow);
 
+// 截图：popup 自己的窗口里查活动标签，带上 tabId 让 background 定向驱动捕获
+document.querySelectorAll('[data-shot]').forEach((btn) => {
+  btn.addEventListener('click', () => {
+    chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
+      chrome.runtime.sendMessage({ type: 'ac-arm-capture', mode: btn.dataset.shot, tabId: tab && tab.id }, () => {
+        window.close();
+      });
+    });
+  });
+});
+
+$('shotOptions').addEventListener('click', () => chrome.runtime.openOptionsPage());
+
 // 页面加载时刷新更新状态
 refreshUpdateUI();

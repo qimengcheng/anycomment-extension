@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
   "name": "AnyComment 网页评论",
-  "version": "1.27.0",
+  "version": "1.28.0",
   "description": "在任意网页右侧展开评论区，发表评论、回复他人、参与讨论。",
-  "permissions": ["storage", "alarms", "downloads", "clipboardWrite"],
-  "host_permissions": ["https://api.github.com/*"],
+  "permissions": ["storage", "alarms", "downloads", "clipboardWrite", "debugger"],
+  "host_permissions": ["https://api.github.com/*", "<all_urls>"],
   "background": {
     "service_worker": "background.js"
   },
@@ -12,10 +12,28 @@
     "default_popup": "popup.html",
     "default_title": "AnyComment 设置"
   },
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "commands": {
+    "capture-selection": {
+      "suggested_key": { "default": "Ctrl+Shift+1" },
+      "description": "框选区域截图"
+    },
+    "capture-viewport": {
+      "suggested_key": { "default": "Ctrl+Shift+2" },
+      "description": "截取当前屏幕区域"
+    },
+    "capture-fullpage": {
+      "suggested_key": { "default": "Ctrl+Shift+3" },
+      "description": "截取完整页面"
+    }
+  },
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],
-      "js": ["qrcode.js", "content.js"],
+      "js": ["qrcode.js", "card.js", "content.js", "capture.js"],
       "run_at": "document_idle"
     }
   ],

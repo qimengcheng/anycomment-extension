@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>AnyComment 截图设置</title>
+  <style>
+    body {
+      margin: 0; padding: 28px 20px 48px; background: #f6f7fb;
+      font-family: -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+      font-size: 14px; color: #1f2430;
+    }
+    .wrap { max-width: 880px; margin: 0 auto; }
+    h1 { display: flex; align-items: center; gap: 9px; font-size: 19px; margin: 0 0 4px; }
+    h1 img { width: 24px; height: 24px; }
+    .sub { color: #8a90a5; font-size: 13px; margin: 0 0 22px; }
+    .grid { display: grid; grid-template-columns: 1fr 320px; gap: 18px; align-items: start; }
+    @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+    .card { background: #fff; border: 1px solid #e6e9f2; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
+    .card h2 { font-size: 14px; margin: 0 0 12px; color: #4b5568; }
+    .row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 9px 0; border-top: 1px solid #f1f3f8; }
+    .row:first-of-type { border-top: none; }
+    .row .txt { flex: 1; min-width: 0; }
+    .row .txt b { display: block; font-weight: 600; }
+    .row .txt span { display: block; color: #8a90a5; font-size: 12px; line-height: 1.5; margin-top: 2px; }
+    /* 开关宽度固定，否则长文案会把它压扁、滑块溢出轨道 */
+    .ac-switch { position: relative; display: inline-block; width: 40px; height: 22px; flex: 0 0 40px; }
+    .ac-switch input { opacity: 0; width: 0; height: 0; }
+    .ac-switch-slider { position: absolute; inset: 0; cursor: pointer; background: #d1d5db; border-radius: 22px; transition: .2s; }
+    .ac-switch-slider:before { position: absolute; content: ""; height: 16px; width: 16px; left: 3px; bottom: 3px; background: #fff; border-radius: 50%; transition: .2s; box-shadow: 0 1px 3px rgba(0,0,0,.2); }
+    .ac-switch input:checked + .ac-switch-slider { background: #4f6ef7; }
+    .ac-switch input:checked + .ac-switch-slider:before { transform: translateX(18px); }
+    select { font: inherit; padding: 5px 8px; border: 1px solid #dfe3ee; border-radius: 7px; background: #fff; color: #1f2430; }
+    .segs { display: flex; gap: 6px; flex-wrap: wrap; }
+    .segs label { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border: 1px solid #dfe3ee; border-radius: 16px; cursor: pointer; font-size: 13px; }
+    .segs label:has(input:checked) { border-color: #4f6ef7; background: #eef2ff; color: #2f54eb; }
+    .segs input { accent-color: #4f6ef7; margin: 0; }
+    .indent { padding-left: 14px; margin-top: 8px; }
+    .indent.off { opacity: .45; pointer-events: none; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    td { padding: 7px 0; border-top: 1px solid #f1f3f8; }
+    tr:first-child td { border-top: none; }
+    td.k { color: #4b5568; }
+    td.v { text-align: right; font-family: ui-monospace, Menlo, Consolas, monospace; color: #2f54eb; white-space: nowrap; }
+    button { font: inherit; padding: 7px 14px; border-radius: 8px; border: 1px solid #dfe3ee; background: #fff; cursor: pointer; }
+    button.primary { background: #4f6ef7; border-color: #4f6ef7; color: #fff; }
+    button:hover { opacity: .92; }
+    .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+    .note { color: #8a90a5; font-size: 12px; line-height: 1.6; margin: 10px 0 0; }
+    .preview img { width: 100%; border: 1px solid #e6e9f2; border-radius: 8px; display: block; }
+    .preview .cap { color: #8a90a5; font-size: 12px; margin-top: 8px; line-height: 1.5; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1><img src="icons/icon48.png" alt="" />AnyComment 截图设置</h1>
+    <p class="sub">截图上的网址二维码、拍摄时间与品牌标识可以分别开关，改动即时生效，无需刷新网页。</p>
+
+    <div class="grid">
+      <div>
+        <div class="card">
+          <h2>截图内容</h2>
+          <div class="row">
+            <span class="txt"><b>网址二维码</b><span>扫一下就能回到原页面，网址过长时会自动省略二维码</span></span>
+            <label class="ac-switch"><input type="checkbox" id="shot_qr" /><span class="ac-switch-slider"></span></label>
+          </div>
+          <div class="row">
+            <span class="txt"><b>拍摄时间</b><span>格式 YYYY-MM-DD HH:mm，取截图那一刻</span></span>
+            <label class="ac-switch"><input type="checkbox" id="shot_time" /><span class="ac-switch-slider"></span></label>
+          </div>
+          <div class="row">
+            <span class="txt"><b>AnyComment 标识</b><span>品牌蓝点 + “AnyComment · 网页截图”</span></span>
+            <label class="ac-switch"><input type="checkbox" id="shot_brand" /><span class="ac-switch-slider"></span></label>
+          </div>
+          <div class="row">
+            <span class="txt"><b>二维码位置</b><span>覆盖在图上不改变图片尺寸；放图外会在下方扩一条底栏</span></span>
+            <div class="segs">
+              <label><input type="radio" name="pos" id="pos_overlay" value="1" />覆盖在图上</label>
+              <label><input type="radio" name="pos" id="pos_strip" value="0" />放图外底栏</label>
+            </div>
+          </div>
+          <div class="indent" id="cornerBox">
+            <div class="segs">
+              <label><input type="radio" name="corner" value="tl" />左上</label>
+              <label><input type="radio" name="corner" value="tr" />右上</label>
+              <label><input type="radio" name="corner" value="bl" />左下</label>
+              <label><input type="radio" name="corner" value="br" />右下</label>
+            </div>
+          </div>
+          <div class="row">
+            <span class="txt"><b>默认截图模式</b><span>从扩展弹窗点「截图」时使用</span></span>
+            <select id="shot_default_mode">
+              <option value="viewport">当前屏幕区域</option>
+              <option value="selection">框选区域</option>
+              <option value="fullpage">完整页面</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="card">
+          <h2>快捷键</h2>
+          <table id="keys"><tbody></tbody></table>
+          <div class="actions">
+            <button class="primary" id="openShortcuts">去 Chrome 快捷键设置修改</button>
+          </div>
+          <p class="note">Chrome 不允许扩展程序化写入快捷键，只能在这里查看当前绑定，点上面的按钮在浏览器设置页修改。被浏览器保留的组合（如 Ctrl+Shift+T、Ctrl+W）无法绑定，若某个命令显示「未生效」，换一个未被占用的组合即可。</p>
+        </div>
+
+        <p class="note">整页截图使用调试协议一次性成像，期间浏览器顶部会出现「AnyComment 开始调试此浏览器」横幅，截图结束自动消失；点横幅的「取消」会中断本次截图。<br />浏览器内部页（chrome://、扩展商店页）不允许截图。整页截图会先把浏览器视口临时撑到整页高度再成像，所以吸顶/固定元素只会出现在图顶部，不会一路重复；代价是按视口尺寸排版的内容（100vh 区块、固定附着背景）可能与平时看到的略有不同。页面过长超出上限时只截取顶部并在完成后提示。</p>
+      </div>
+
+      <div class="card preview">
+        <h2>效果预览</h2>
+        <img id="previewImg" alt="截图合成效果预览" />
+        <p class="cap">上面是示例网页截图按当前设置合成的效果，二维码内容为 anycomment.qimengcheng-47e.workers.dev 的示例地址。</p>
+      </div>
+    </div>
+  </div>
+  <script src="qrcode.js"></script>
+  <script src="card.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

@@ -81,6 +81,8 @@
     .update-actions { display: flex; gap: 8px; }
     .update-actions button { height: 28px; font-size: 12px; flex: 1; }
     .update-actions .primary { background: #4f6ef7; border-color: #4f6ef7; color: #fff; }
+    .shot-row { display: flex; gap: 6px; }
+    .shot-row button { flex: 1; padding: 0 4px; font-size: 12px; }
     .version-info { color: #8a90a5; font-size: 12px; text-align: center; margin-top: 4px; }
     .version-info span { cursor: pointer; text-decoration: underline; color: #4f6ef7; }
   </style>
@@ -104,7 +106,14 @@
       </label>
     </label>
     <button id="profile" class="primary">个人中心</button>
-    <p class="hint">开关切换后自动保存，刷新网页即可生效。点击"个人中心"在新标签页查看自己的主页，未登录时会先进入登录页。</p>
+    <div class="shot-row">
+      <button data-shot="selection">框选截图</button>
+      <button data-shot="viewport">屏幕截图</button>
+      <button data-shot="fullpage">整页截图</button>
+    </div>
+    <button id="shotOptions">截图设置</button>
+    <p class="hint">开关切换后自动保存，刷新网页生效。「个人中心」在新标签页打开自己的主页，未登录时先进入登录页。</p>
+    <p class="hint">截图会自动带上网址二维码与拍摄时间（可在截图设置里单独关闭）。整页截图使用浏览器调试协议一次性成像，顶部会短暂出现调试提示条；浏览器内部页面不支持截图。</p>
     <div class="version-info">v<span id="versionText"></span> · <span id="checkLink">检查更新</span></div>
   </div>
   <script src="popup.js"></script>

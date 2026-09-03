@@ -5,6 +5,14 @@
   // 固定服务器地址（不可修改）
   const SERVER = 'https://anycomment.qimengcheng-47e.workers.dev';
   const serverOrigin = safeOrigin(SERVER);
+  const card = globalThis.__acCard; // 绘制与预览原语见 card.js（同一隔离世界，manifest 先加载）
+
+  // 截图时临时隐藏扩展自身 UI：capture.js 与本脚本同隔离世界，直接走全局钩子。
+  // 用 visibility 不用 display —— display:none 会让 iframe 卸载，评论区要重新加载
+  globalThis.__acUi = {
+    hide() { if (host) host.style.visibility = 'hidden'; },
+    show() { if (host) host.style.visibility = ''; },
+  };
 
   let host, shadow, fab, badge, panel, iframe, quoteBtn;
   let opened = false;
@@ -234,167 +242,6 @@
     pendingQuote = null;
   }
 
-  // ========== 划线分享：生成公众号风格金句卡片图片 ==========
-
-  // 按最大宽度对文本做换行拆分（逐字测量，兼容中英文混排）
-  function wrapText(ctx, text, maxWidth, maxLines) {
-    const lines = [];
-    let line = '';
-    for (const ch of text) {
-      const test = line + ch;
-      if (ctx.measureText(test).width > maxWidth && line) {
-        lines.push(line);
-        line = ch;
-        if (lines.length >= maxLines) { lines[maxLines - 1] = lines[maxLines - 1].replace(/\s+$/, '') + '…'; return lines; }
-      } else {
-        line = test;
-      }
-    }
-    if (line) lines.push(line);
-    return lines;
-  }
-
-  // 生成网址二维码：库内部读取的是模块级 qrcode.stringToBytes（挂在实例上无效），
-  // UTF-8 才能正确编码中文路径；网址过长时降低纠错率以控制二维码尺寸
-  function buildQrMatrix(url) {
-    if (!url || typeof qrcode !== 'function' || !qrcode.stringToBytesFuncs) return null;
-    try {
-      qrcode.stringToBytes = qrcode.stringToBytesFuncs['UTF-8'];
-      let qr = null;
-      for (const ecl of ['M', 'L']) {
-        qr = qrcode(0, ecl); // typeNumber 0 = 自动选尺寸
-        qr.addData(String(url), 'Byte');
-        qr.make();
-        if (qr.getModuleCount() <= 45) return qr;
-      }
-      return null; // 仍过大则不画，降级为日期
-    } catch (e) {
-      return null;
-    }
-  }
-
-  // 用 Canvas 绘制金句卡片，返回 dataURL(2x)
-  function drawShareCard({ text, title, site, url }) {
-    const W = 720, PAD = 56, DPR = 2;
-    const fontMain = (size, weight = 600) => `${weight} ${size}px "PingFang SC", "Microsoft YaHei", system-ui, sans-serif`;
-    // 先用离屏 canvas 测量文字行数
-    const meas = document.createElement('canvas').getContext('2d');
-    meas.font = fontMain(30);
-    const lines = wrapText(meas, text, W - PAD * 2, 10);
-    const lineH = 48;
-    const quoteTop = 150;
-    const dividerY = quoteTop + lines.length * lineH + 4; // 出处区上方的分隔线
-
-    // 二维码模块边长取整像素（半格会糊出灰边，手机识别率骤降），静默区 2 模块
-    const qr = buildQrMatrix(url);
-    const QR_QUIET = 2;
-    const qrCount = qr ? qr.getModuleCount() : 0;
-    const qrTotal = qrCount + QR_QUIET * 2;
-    const qrCell = qr ? Math.max(3, Math.min(4, Math.floor(104 / qrTotal))) : 0;
-    const qrPx = qrCell * qrTotal;
-    const qrTop = dividerY + 14;
-    const qrLeft = W - PAD - qrPx;
-    const hintY = qrTop + qrPx + 17;
-    const srcTitleY = dividerY + 18;
-    const srcDomainY = dividerY + 44;
-    const H = dividerY + (qr ? Math.max(64, hintY - dividerY + 9) : 64) + 34; // 卡片底边 = H - 28
-
-    const canvas = document.createElement('canvas');
-    canvas.width = W * DPR;
-    canvas.height = H * DPR;
-    const ctx = canvas.getContext('2d');
-    ctx.scale(DPR, DPR);
-
-    // 渐变底 + 装饰圆
-    const bg = ctx.createLinearGradient(0, 0, W, H);
-    bg.addColorStop(0, '#eef3ff');
-    bg.addColorStop(1, '#f9fbff');
-    ctx.fillStyle = bg;
-    ctx.fillRect(0, 0, W, H);
-    ctx.fillStyle = 'rgba(79,110,247,0.08)';
-    ctx.beginPath(); ctx.arc(W - 40, 40, 130, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = 'rgba(47,107,255,0.06)';
-    ctx.beginPath(); ctx.arc(30, H - 30, 100, 0, Math.PI * 2); ctx.fill();
-
-    // 白色圆角卡片
-    const cx = 28, cy = 28, cw = W - 56, ch = H - 56, r = 20;
-    ctx.save();
-    ctx.shadowColor = 'rgba(31,36,48,0.10)';
-    ctx.shadowBlur = 24;
-    ctx.shadowOffsetY = 8;
-    ctx.fillStyle = '#ffffff';
-    ctx.beginPath();
-    ctx.moveTo(cx + r, cy);
-    ctx.arcTo(cx + cw, cy, cx + cw, cy + ch, r);
-    ctx.arcTo(cx + cw, cy + ch, cx, cy + ch, r);
-    ctx.arcTo(cx, cy + ch, cx, cy, r);
-    ctx.arcTo(cx, cy, cx + cw, cy, r);
-    ctx.closePath();
-    ctx.fill();
-    ctx.restore();
-
-    // 顶部品牌条：蓝点 + AnyComment 划线分享
-    ctx.fillStyle = '#2f6bff';
-    ctx.beginPath(); ctx.arc(cx + 30, cy + 44, 7, 0, Math.PI * 2); ctx.fill();
-    ctx.font = fontMain(15, 500);
-    ctx.fillStyle = '#8a90a5';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('AnyComment · 划线分享', cx + 46, cy + 45);
-
-    // 大引号
-    ctx.font = `700 64px Georgia, "Times New Roman", serif`;
-    ctx.fillStyle = 'rgba(47,107,255,0.18)';
-    ctx.fillText('“', PAD - 8, quoteTop - 22);
-
-    // 引用文字
-    ctx.font = fontMain(30, 600);
-    ctx.fillStyle = '#1f2430';
-    ctx.textBaseline = 'top';
-    lines.forEach((ln, i) => ctx.fillText(ln, PAD, quoteTop + i * lineH - 20));
-
-    // 出处：页面标题 + 站点（右侧留给二维码）
-    ctx.strokeStyle = '#eceef4';
-    ctx.beginPath(); ctx.moveTo(PAD, dividerY); ctx.lineTo(W - PAD, dividerY); ctx.stroke();
-    ctx.font = fontMain(17, 500);
-    ctx.fillStyle = '#4b5563';
-    // 前缀也要计入测量，否则长标题会钻到二维码底下
-    const srcText = `—— ${title || site || ''}`;
-    ctx.fillText(wrapText(ctx, srcText, (qr ? qrLeft - PAD : W - PAD * 2) - 20, 1)[0] || '', PAD, srcTitleY);
-    ctx.font = fontMain(14, 400);
-    ctx.fillStyle = '#a5abc0';
-    const domain = (site || '').replace(/^www\./, '');
-    ctx.fillText(wrapText(ctx, domain, (qr ? qrLeft - PAD : W - PAD * 2) - 20, 1)[0] || '', PAD, srcDomainY);
-
-    if (qr) {
-      // 二维码白底（含静默区）+ 整像素模块
-      ctx.save();
-      ctx.fillStyle = '#ffffff';
-      ctx.shadowColor = 'rgba(31,36,48,0.10)';
-      ctx.shadowBlur = 12;
-      ctx.fillRect(qrLeft - 8, qrTop - 8, qrPx + 16, qrPx + 16);
-      ctx.restore();
-      ctx.fillStyle = '#1f2430';
-      for (let r = 0; r < qrCount; r++) {
-        for (let c = 0; c < qrCount; c++) {
-          if (qr.isDark(r, c)) ctx.fillRect(qrLeft + (c + QR_QUIET) * qrCell, qrTop + (r + QR_QUIET) * qrCell, qrCell, qrCell);
-        }
-      }
-      ctx.textBaseline = 'alphabetic';
-      ctx.font = fontMain(13, 400);
-      ctx.fillStyle = '#a5abc0';
-      const hint = '扫码阅读原文';
-      ctx.fillText(hint, qrLeft + (qrPx - ctx.measureText(hint).width) / 2, hintY);
-    } else {
-      const d = new Date();
-      const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-      ctx.font = fontMain(13, 400);
-      ctx.fillStyle = '#a5abc0';
-      ctx.fillText(ds, W - PAD - ctx.measureText(ds).width, srcDomainY);
-    }
-
-    return canvas.toDataURL('image/png');
-  }
-
   // 划线分享：生成卡片 + 预览浮层（下载/复制），登录态下记录并即时标虚线
   function onQuoteShare() {
     if (!pendingQuote) return;
@@ -403,59 +250,12 @@
     window.getSelection()?.removeAllRanges();
     pendingQuote = null;
     try {
-      const dataUrl = drawShareCard({ text: q.text, title: document.title, site: location.host, url: pageUrl() });
-      showSharePreview(dataUrl, q);
+      const dataUrl = card.drawShareCard({ text: q.text, title: document.title, site: location.host, url: pageUrl() });
+      card.showPreview(shadow, dataUrl, { alt: '划线分享卡片预览' });
       recordQuoteShare(q); // 记录划线（登录态），并即时给页面加虚线
     } catch (e) {
       showExtToast('生成分享卡片失败');
     }
-  }
-
-  function showSharePreview(dataUrl, q) {
-    // 单例预览层
-    shadow.querySelector('.ac-share-mask')?.remove();
-    const mask = document.createElement('div');
-    mask.className = 'ac-share-mask';
-    const box = document.createElement('div');
-    box.className = 'ac-share-card-box';
-    const img = document.createElement('img');
-    img.className = 'ac-share-img';
-    img.src = dataUrl;
-    img.alt = '划线分享卡片预览';
-    const acts = document.createElement('div');
-    acts.className = 'ac-share-actions';
-    const btnDl = document.createElement('button');
-    btnDl.className = 'ac-share-btn ac-share-primary';
-    btnDl.textContent = '下载图片';
-    btnDl.addEventListener('click', () => {
-      const a = document.createElement('a');
-      a.href = dataUrl;
-      a.download = `anycomment-quote-${Date.now()}.png`;
-      a.click();
-    });
-    const btnCopy = document.createElement('button');
-    btnCopy.className = 'ac-share-btn ac-share-ghost';
-    btnCopy.textContent = '复制图片';
-    btnCopy.addEventListener('click', async () => {
-      try {
-        // dataURL → Blob（content script 里 fetch(data:) 在部分环境被禁，手动解码更稳）
-        const b64 = dataUrl.split(',')[1];
-        const bytes = Uint8Array.from(atob(b64), (ch) => ch.charCodeAt(0));
-        await navigator.clipboard.write([new ClipboardItem({ 'image/png': new Blob([bytes], { type: 'image/png' }) })]);
-        btnCopy.textContent = '已复制 ✓';
-      } catch {
-        btnCopy.textContent = '复制失败，请下载';
-      }
-    });
-    const btnClose = document.createElement('button');
-    btnClose.className = 'ac-share-btn ac-share-close';
-    btnClose.textContent = '关闭';
-    btnClose.addEventListener('click', () => mask.remove());
-    acts.append(btnDl, btnCopy, btnClose);
-    box.append(img, acts);
-    mask.append(box);
-    mask.addEventListener('click', (e) => { if (e.target === mask) mask.remove(); });
-    shadow.appendChild(mask);
   }
 
   // 记录划线分享到服务端（登录态），成功后给本页文字加虚线
@@ -935,26 +735,6 @@
     .ac-qb:hover { transform: scale(1.05); box-shadow: 0 6px 16px rgba(31,36,48,.3); }
     .ac-qb svg { width: 14px; height: 14px; fill: #fff; }
     .ac-qb-share { background: #10a37f; }
-    .ac-share-mask {
-      position: fixed; inset: 0; z-index: 2147483647;
-      background: rgba(15,18,28,.55);
-      display: flex; align-items: center; justify-content: center;
-      font-family: system-ui, -apple-system, "PingFang SC", "Microsoft YaHei", sans-serif;
-    }
-    .ac-share-card-box {
-      background: #fff; border-radius: 14px; padding: 16px;
-      box-shadow: 0 12px 40px rgba(0,0,0,.35);
-      display: flex; flex-direction: column; gap: 12px; align-items: center;
-      max-width: 92vw;
-    }
-    .ac-share-img { max-height: 62vh; max-width: 100%; border-radius: 8px; border: 1px solid #eceef4; }
-    .ac-share-actions { display: flex; gap: 10px; }
-    .ac-share-btn {
-      padding: 8px 18px; border-radius: 8px; border: none; cursor: pointer;
-      font: 600 13px/1 system-ui, sans-serif;
-    }
-    .ac-share-primary { background: #4f6ef7; color: #fff; }
-    .ac-share-ghost { background: #eef1fb; color: #4f6ef7; }
-    .ac-share-close { background: #f3f4f6; color: #6b7280; }
+    /* 预览浮层样式在 card.js 的 PREVIEW_CSS 中，由 showPreview 注入所在 shadow root */
   `;
 })();
