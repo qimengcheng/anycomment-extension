@@ -2984,9 +2984,11 @@
     const srcTitleY = dividerY + 18;
     const srcDomainY = dividerY + 44;
     let H = dividerY + (qr ? Math.max(64, hintY - dividerY + 9) : 64) + 34; // 卡片底边 = H - 28
-    // 主题包版式：卡片高度保底 960（3:4 海报在 720 宽下正好满幅 720x960，零裁切），
+    // 主题包版式：内容实际底边（不含常规 34px 底边距）；面板只包到内容，不无谓撑高
+    const packContentBottom = H - 34;
+    // 卡片高度保底 960（3:4 海报在 720 宽下正好满幅 720x960，零裁切），
     // 引文更长时卡片才长高，长出的部分以海报底边色延伸（几乎全被面板盖住）
-    if (usePack) H = Math.max(960, H);
+    if (usePack) H = Math.max(960, packContentBottom + 26 + 28);
 
     const canvas = document.createElement('canvas');
     canvas.width = W * DPR;
@@ -3010,7 +3012,9 @@
       ctx.shadowColor = 'rgba(31,36,48,0.12)';
       ctx.shadowBlur = 24;
       ctx.shadowOffsetY = 8;
-      roundRectPath(ctx, cx, PACK_PANEL_TOP, cw, H - 28 - PACK_PANEL_TOP, r);
+      // 面板底边贴内容（26px 内边距），短引文时海报下部露出，不被面板无谓占满
+      const packPanelBottom = Math.min(H - 28, packContentBottom + 26);
+      roundRectPath(ctx, cx, PACK_PANEL_TOP, cw, packPanelBottom - PACK_PANEL_TOP, r);
       ctx.fill();
       ctx.restore();
     } else {
