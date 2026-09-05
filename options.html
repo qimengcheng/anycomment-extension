@@ -48,6 +48,8 @@
     .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
     .note { color: #8a90a5; font-size: 12px; line-height: 1.6; margin: 10px 0 0; }
     .preview img { width: 100%; border: 1px solid #e6e9f2; border-radius: 8px; display: block; }
+    .preview .ptitle { font-size: 12px; font-weight: 600; color: #4b5568; margin: 14px 0 6px; }
+    .preview .ptitle:first-of-type { margin-top: 0; }
     .preview .cap { color: #8a90a5; font-size: 12px; margin-top: 8px; line-height: 1.5; }
   </style>
 </head>
@@ -131,8 +133,12 @@
 
       <div class="card preview">
         <h2>效果预览</h2>
+        <p class="ptitle">网页截图</p>
         <img id="previewImg" alt="截图合成效果预览" />
-        <p class="cap">上面是示例网页截图按当前设置合成的效果，二维码内容为 anycomment.qimengcheng-47e.workers.dev 的示例地址。</p>
+        <p class="cap">示例网页截图按当前设置合成的效果，二维码内容为 anycomment.qimengcheng-47e.workers.dev 的示例地址。</p>
+        <p class="ptitle">划线分享金句卡片</p>
+        <img id="previewShareImg" alt="划线分享金句卡片预览" />
+        <p class="cap">选中网页文字点「分享」后生成的金句卡片效果，与上面的截图共用同一套节日/节气主题设置。</p>
       </div>
     </div>
   </div>

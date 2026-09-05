@@ -144,6 +144,24 @@
     } catch (e) {
       $('previewImg').style.display = 'none';
     }
+    // 划线分享金句卡片走真实 drawShareCard，与截图预览共用主题选择与开关（theme_id 同样只在本页临时生效）
+    try {
+      const url2 = card.drawShareCard({
+        text: '选中网页里的一段文字，点「分享」，就能生成这样一张带二维码的金句卡片。',
+        title: '示例文章标题：划线分享的排版效果',
+        site: 'anycomment.qimengcheng-47e.workers.dev',
+        url: SAMPLE_URL,
+        festive: cfg.card_festival_bg !== false,
+        memorial: cfg.card_memorial_bg === true,
+        themeId: previewTheme,
+        defaultTheme: cfg.card_default_theme || '',
+      });
+      const el2 = $('previewShareImg');
+      el2.src = url2;
+      el2.style.display = '';
+    } catch (e) {
+      $('previewShareImg').style.display = 'none';
+    }
   }
 
   function loadImage(src) {
