@@ -2962,14 +2962,11 @@
       }
     }
     const W = 720, PAD = 56, DPR = 2;
-    const PACK_PANEL_TOP = 420; // 主题包版式（A）：上半整块给主题图，半透明白面板从这里铺到卡底
     // 先用离屏 canvas 测量文字行数
     const meas = document.createElement('canvas').getContext('2d');
     meas.font = fontMain(30);
     const lines = wrapText(meas, text, W - PAD * 2, 10);
     const lineH = 48;
-    const quoteTop = usePack ? PACK_PANEL_TOP + 120 : 150;
-    const dividerY = quoteTop + lines.length * lineH + 4; // 出处区上方的分隔线
 
     // 二维码模块边长取整像素（半格会糊出灰边，手机识别率骤降），静默区 2 模块
     const qr = buildQrMatrix(url);
@@ -2978,17 +2975,27 @@
     const qrTotal = qrCount + QR_QUIET * 2;
     const qrCell = qr ? Math.max(3, Math.min(4, Math.floor(104 / qrTotal))) : 0;
     const qrPx = qrCell * qrTotal;
+
+    // 主题包版式（A）：面板底部锚定（贴卡片底边 28px），高度贴合内容；
+    // 海报在面板上方完整显示（卡片高度保底 960，3:4 海报满幅零裁切；
+    // 内容超长时面板跟随上移，海报顶部仍保留至少 260px）
+    let quoteTop = 150, panelTop = 0, H = 0;
+    if (usePack) {
+      const dividerRel = 120 + lines.length * lineH + 4; // 面板顶→分隔线
+      const qrTopRel = dividerRel + 14;
+      const qrBlockH = qr ? Math.max(64, qrTopRel + qrPx + 17 - dividerRel + 9) : 64;
+      const panelH = dividerRel + qrBlockH + 26; // + 底部内边距
+      H = Math.max(960, panelH + 28 + 260);
+      panelTop = H - 28 - panelH;
+      quoteTop = panelTop + 120;
+    }
+    const dividerY = quoteTop + lines.length * lineH + 4; // 出处区上方的分隔线
     const qrTop = dividerY + 14;
     const qrLeft = W - PAD - qrPx;
     const hintY = qrTop + qrPx + 17;
     const srcTitleY = dividerY + 18;
     const srcDomainY = dividerY + 44;
-    let H = dividerY + (qr ? Math.max(64, hintY - dividerY + 9) : 64) + 34; // 卡片底边 = H - 28
-    // 主题包版式：内容实际底边（不含常规 34px 底边距）；面板只包到内容，不无谓撑高
-    const packContentBottom = H - 34;
-    // 卡片高度保底 960（3:4 海报在 720 宽下正好满幅 720x960，零裁切），
-    // 引文更长时卡片才长高，长出的部分以海报底边色延伸（几乎全被面板盖住）
-    if (usePack) H = Math.max(960, packContentBottom + 26 + 28);
+    if (!usePack) H = dividerY + (qr ? Math.max(64, hintY - dividerY + 9) : 64) + 34; // 卡片底边 = H - 28
 
     const canvas = document.createElement('canvas');
     canvas.width = W * DPR;
@@ -3012,9 +3019,8 @@
       ctx.shadowColor = 'rgba(31,36,48,0.12)';
       ctx.shadowBlur = 24;
       ctx.shadowOffsetY = 8;
-      // 面板底边贴内容（26px 内边距），短引文时海报下部露出，不被面板无谓占满
-      const packPanelBottom = Math.min(H - 28, packContentBottom + 26);
-      roundRectPath(ctx, cx, PACK_PANEL_TOP, cw, packPanelBottom - PACK_PANEL_TOP, r);
+      // 面板底部锚定（贴卡片底边 28px），高度贴合内容
+      roundRectPath(ctx, cx, panelTop, cw, H - 28 - panelTop, r);
       ctx.fill();
       ctx.restore();
     } else {
@@ -3025,7 +3031,7 @@
     }
 
     // 顶部品牌条：蓝点 + AnyComment 划线分享（主题包版式落在面板顶部，右侧加日期·条目名）
-    const brandY = usePack ? PACK_PANEL_TOP + 44 : cy + 44;
+    const brandY = usePack ? panelTop + 44 : cy + 44;
     ctx.fillStyle = '#2f6bff';
     ctx.beginPath(); ctx.arc(cx + 30, brandY, 7, 0, Math.PI * 2); ctx.fill();
     ctx.font = fontMain(15, 500);
