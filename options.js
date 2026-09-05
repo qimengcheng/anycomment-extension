@@ -31,11 +31,13 @@
     $('shot_time').checked = !!cfg.shot_time;
     $('shot_brand').checked = !!cfg.shot_brand;
     $('card_festival_bg').checked = cfg.card_festival_bg !== false;
+    $('card_default_theme').value = cfg.card_default_theme || '';
     $(cfg.shot_qr_overlay ? 'pos_overlay' : 'pos_strip').checked = true;
     $('cornerBox').classList.toggle('off', !cfg.shot_qr_overlay || !cfg.shot_qr);
     const corner = document.querySelector(`input[name="corner"][value="${cfg.shot_qr_corner}"]`);
     if (corner) corner.checked = true;
     $('shot_default_mode').value = cfg.shot_default_mode;
+    updateAutoLabel();
     drawPreview();
   }
 
@@ -43,6 +45,7 @@
   $('shot_time').addEventListener('change', (e) => save({ shot_time: e.target.checked }));
   $('shot_brand').addEventListener('change', (e) => save({ shot_brand: e.target.checked }));
   $('card_festival_bg').addEventListener('change', (e) => save({ card_festival_bg: e.target.checked }));
+  $('card_default_theme').addEventListener('change', (e) => save({ card_default_theme: e.target.value }));
   $('pos_overlay').addEventListener('change', () => save({ shot_qr_overlay: true }));
   $('pos_strip').addEventListener('change', () => save({ shot_qr_overlay: false }));
   document.querySelectorAll('input[name="corner"]').forEach((r) => {
@@ -72,15 +75,25 @@
   // 主题预览选择：仅本页临时生效，不写入 storage
   let previewTheme = '';
 
-  // 预览选择器：按今天实际命中的主题做默认说明，节日在前、节气在后分组
-  (() => {
+  // 预览选择器：节日在前、节气在后分组，每项带当年实际日期（腊八这类农历年末节日算"今年过的那次"）
+  const themeSel = $('theme_pick');
+  function buildThemeOptions() {
+    const withDate = (t) => `${t.name}（${card.themeDateInYear(t)}）`;
+    themeSel.innerHTML = `<option value=""></option>`
+      + `<optgroup label="节日">${card.THEME_LIST.filter((t) => !t.isTerm).map((t) => `<option value="${t.name}">${withDate(t)}</option>`).join('')}</optgroup>`
+      + `<optgroup label="二十四节气">${card.THEME_LIST.filter((t) => t.isTerm).map((t) => `<option value="${t.name}">${withDate(t)}</option>`).join('')}</optgroup>`;
+    themeSel.addEventListener('change', () => { previewTheme = themeSel.value; drawPreview(); });
+  }
+  // 首项说明跟随今天的命中结果；无命中时提示将使用的兜底默认风格
+  function updateAutoLabel() {
     const today = card.resolveTheme(new Date());
-    const sel = $('theme_pick');
-    sel.innerHTML = `<option value="">按今天日期（${today ? today.name : '无，默认背景'}）</option>`
-      + `<optgroup label="节日">${card.THEME_LIST.filter((t) => !t.isTerm).map((t) => `<option value="${t.name}">${t.name}</option>`).join('')}</optgroup>`
-      + `<optgroup label="二十四节气">${card.THEME_LIST.filter((t) => t.isTerm).map((t) => `<option value="${t.name}">${t.name}</option>`).join('')}</optgroup>`;
-    sel.addEventListener('change', () => { previewTheme = sel.value; drawPreview(); });
-  })();
+    themeSel.querySelector('option').textContent = `按今天日期（${today ? today.name : cfg.card_default_theme || '默认蓝渐变'}）`;
+  }
+  buildThemeOptions();
+
+  // 默认背景风格：默认蓝渐变 + 全部节日风格（当天无命中时生效；关掉节日开关时它就是常驻风格）
+  $('card_default_theme').innerHTML = `<option value="">默认蓝渐变</option>`
+    + card.THEME_LIST.filter((t) => !t.isTerm).map((t) => `<option value="${t.name}">${t.name}</option>`).join('');
 
   function makeSample() {
     const c = document.createElement('canvas');

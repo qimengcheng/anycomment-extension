@@ -10,6 +10,7 @@
     shot_qr_corner: 'br', // tl | tr | bl | br，仅覆盖模式生效
     shot_default_mode: 'viewport', // selection | viewport | fullpage
     card_festival_bg: true, // 节日/节气主题背景，划线分享卡片与截图共用
+    card_default_theme: '', // 当天无命中时的兜底风格：''=默认蓝渐变，或节日主题名（关掉节日开关时它就是常驻风格）
   };
 
   const fontMain = (size, weight = 600) => `${weight} ${size}px "PingFang SC", "Microsoft YaHei", system-ui, sans-serif`;
@@ -540,7 +541,7 @@
     },
   };
   const TERM_THEMES = TERM_NAMES.map((name, i) => ({
-    name, isTerm: true,
+    name, isTerm: true, when: { term: i },
     grad: [TERM_STYLE[i][0], TERM_STYLE[i][1]],
     deco: TERM_STYLE[i][2] === 'snow' && i === 22
       ? (ctx, x0, y0, w, h, s) => SEASON_DECO.snow(ctx, x0, y0, w, h, s, i, 1.8) // 大雪最密
@@ -550,7 +551,7 @@
   // ----- 节日主题：name 用于设置页预览选择器，isTerm 标记节气分组 -----
   const THEMES = {
     newyear: {
-      name: '元旦', grad: ['#3d4f94', '#7b8fd6'],
+      name: '元旦', when: { solar: [1, 1] }, grad: ['#3d4f94', '#7b8fd6'],
       deco(ctx, x0, y0, w, h, s) {
         const b = Math.min(w, h) * s;
         const cols = ['#ff8a8a', '#ffd93d', '#7ecbff', '#c9b6f0', '#ffffff'];
@@ -560,7 +561,7 @@
       },
     },
     spring: {
-      name: '春节', grad: ['#a61b1b', '#d95436'],
+      name: '春节', when: { lunar: [1, 1] }, grad: ['#a61b1b', '#d95436'],
       deco(ctx, x0, y0, w, h, s) {
         const b = Math.min(w, h) * s;
         lantern(ctx, x0 + w - b * 0.1, y0 + b * 0.14, b * 0.085, b * 0.1);
@@ -570,7 +571,7 @@
       },
     },
     lantern: {
-      name: '元宵', grad: ['#8a2f52', '#d96c6c'],
+      name: '元宵', when: { lunar: [1, 15] }, grad: ['#8a2f52', '#d96c6c'],
       deco(ctx, x0, y0, w, h, s) {
         const b = Math.min(w, h) * s;
         lantern(ctx, x0 + w - b * 0.09, y0 + b * 0.12, b * 0.075, b * 0.09, '#f0605a');
@@ -586,7 +587,7 @@
       },
     },
     valentine: {
-      name: '情人节', grad: ['#d9648f', '#f3b3c8'],
+      name: '情人节', when: { solar: [2, 14] }, grad: ['#d9648f', '#f3b3c8'],
       deco(ctx, x0, y0, w, h, s) {
         const b = Math.min(w, h) * s;
         heart(ctx, x0 + w - b * 0.09, y0 + b * 0.09, b * 0.045, 'rgba(255,255,255,0.9)');
@@ -596,7 +597,7 @@
       },
     },
     women: {
-      name: '妇女节', grad: ['#a86ed6', '#e3c1ef'],
+      name: '妇女节', when: { solar: [3, 8] }, grad: ['#a86ed6', '#e3c1ef'],
       deco(ctx, x0, y0, w, h, s) {
         const b = Math.min(w, h) * s;
         blossom(ctx, x0 + w - b * 0.08, y0 + b * 0.09, b * 0.05, '#f0e0f7', '#d6a2e8');
@@ -605,7 +606,7 @@
       },
     },
     labor: {
-      name: '劳动节', grad: ['#e09b3d', '#f3ce8a'],
+      name: '劳动节', when: { solar: [5, 1] }, grad: ['#e09b3d', '#f3ce8a'],
       deco(ctx, x0, y0, w, h, s) {
         const b = Math.min(w, h) * s;
         sunDeco(ctx, x0 + w - b * 0.08, y0 + b * 0.09, b * 0.055, '#f7c46b');
@@ -614,7 +615,7 @@
       },
     },
     youth: {
-      name: '青年节', grad: ['#3f7fbf', '#8fc4e8'],
+      name: '青年节', when: { solar: [5, 4] }, grad: ['#3f7fbf', '#8fc4e8'],
       deco(ctx, x0, y0, w, h, s) {
         const b = Math.min(w, h) * s;
         const cols = ['#ffd93d', '#ffffff', '#ffb05a'];
@@ -623,7 +624,7 @@
       },
     },
     children: {
-      name: '儿童节', grad: ['#5cc9e8', '#aee89a'],
+      name: '儿童节', when: { solar: [6, 1] }, grad: ['#5cc9e8', '#aee89a'],
       deco(ctx, x0, y0, w, h, s) {
         const b = Math.min(w, h) * s;
         balloon(ctx, x0 + w - b * 0.09, y0 + b * 0.1, b * 0.045, '#ff8a8a');
@@ -634,7 +635,7 @@
       },
     },
     mother: {
-      name: '母亲节', grad: ['#e88a9a', '#f7c9c1'],
+      name: '母亲节', when: { mother: true }, grad: ['#e88a9a', '#f7c9c1'],
       deco(ctx, x0, y0, w, h, s) {
         const b = Math.min(w, h) * s;
         blossom(ctx, x0 + w - b * 0.08, y0 + b * 0.09, b * 0.05, '#f7b3c1', '#e86a8a');
@@ -643,7 +644,7 @@
       },
     },
     dragonboat: {
-      name: '端午节', grad: ['#3f8f5f', '#8fd0a0'],
+      name: '端午节', when: { lunar: [5, 5] }, grad: ['#3f8f5f', '#8fd0a0'],
       deco(ctx, x0, y0, w, h, s) {
         const b = Math.min(w, h) * s;
         leaf(ctx, x0 + w - b * 0.08, y0 + b * 0.09, b * 0.11, -0.5, 'rgba(46,120,74,0.75)');
@@ -662,7 +663,7 @@
       },
     },
     qixi: {
-      name: '七夕', grad: ['#2f3d7a', '#7a6fd6'],
+      name: '七夕', when: { lunar: [7, 7] }, grad: ['#2f3d7a', '#7a6fd6'],
       deco(ctx, x0, y0, w, h, s) {
         const b = Math.min(w, h) * s;
         // 斜向银河淡带
@@ -678,7 +679,7 @@
       },
     },
     teacher: {
-      name: '教师节', grad: ['#d99a3d', '#f3d9a0'],
+      name: '教师节', when: { solar: [9, 10] }, grad: ['#d99a3d', '#f3d9a0'],
       deco(ctx, x0, y0, w, h, s) {
         const b = Math.min(w, h) * s;
         blossom(ctx, x0 + w - b * 0.08, y0 + b * 0.09, b * 0.048, '#f7d9a0', '#e8a84a');
@@ -687,7 +688,7 @@
       },
     },
     national: {
-      name: '国庆节', grad: ['#b01f1f', '#e0663c'],
+      name: '国庆节', when: { solar: [10, 1] }, grad: ['#b01f1f', '#e0663c'],
       deco(ctx, x0, y0, w, h, s) {
         const b = Math.min(w, h) * s;
         firework(ctx, x0 + w - b * 0.12, y0 + b * 0.11, b * 0.055, 'rgba(255,217,138,0.9)');
@@ -696,7 +697,7 @@
       },
     },
     midautumn: {
-      name: '中秋节', grad: ['#2f4470', '#5a7fb8'],
+      name: '中秋节', when: { lunar: [8, 15] }, grad: ['#2f4470', '#5a7fb8'],
       deco(ctx, x0, y0, w, h, s) {
         const b = Math.min(w, h) * s;
         fullMoon(ctx, x0 + w - b * 0.11, y0 + b * 0.1, b * 0.062);
@@ -706,7 +707,7 @@
       },
     },
     double9: {
-      name: '重阳节', grad: ['#c97b3d', '#f0b97a'],
+      name: '重阳节', when: { lunar: [9, 9] }, grad: ['#c97b3d', '#f0b97a'],
       deco(ctx, x0, y0, w, h, s) {
         const b = Math.min(w, h) * s;
         blossom(ctx, x0 + w - b * 0.08, y0 + b * 0.09, b * 0.05, '#f7c9a0', '#e8934a'); // 菊
@@ -715,7 +716,7 @@
       },
     },
     laba: {
-      name: '腊八', grad: ['#8a5a3d', '#d0a37a'],
+      name: '腊八', when: { lunar: [12, 8] }, grad: ['#8a5a3d', '#d0a37a'],
       deco(ctx, x0, y0, w, h, s) {
         const b = Math.min(w, h) * s;
         cornerScatter(ctx, x0, y0, w, h, 6, 26, (c, x, y, rng) => flake(c, x, y, b * (0.012 + rng() * 0.012), 'rgba(255,255,255,0.75)'));
@@ -727,7 +728,7 @@
       },
     },
     christmas: {
-      name: '圣诞节', grad: ['#2f6e5a', '#8fc9b0'],
+      name: '圣诞节', when: { solar: [12, 25] }, grad: ['#2f6e5a', '#8fc9b0'],
       deco(ctx, x0, y0, w, h, s) {
         const b = Math.min(w, h) * s;
         cornerScatter(ctx, x0, y0, w, h, 8, 28, (c, x, y, rng) => flake(c, x, y, b * (0.012 + rng() * 0.014), 'rgba(255,255,255,0.85)'));
@@ -792,11 +793,43 @@
   // 设置页预览选择器的候选：节日在前、节气在后
   const THEME_LIST = [...Object.values(THEMES), ...TERM_THEMES];
 
+  // 主题在指定公历年份的实际日期文案（'M月D日'，设置页选择器展示用）；无法计算返回 ''。
+  // 农历节日的「当年日期」按公历年逐日扫描命中（腊八这类农历年末节日会落在次年初，
+  // 用户口径是"今年过的那次"），结果按年缓存
+  const _lunarDatesCache = new Map(); // year -> Map('农历m,d' -> 'M月D日')
+  function themeDateInYear(theme, year = new Date().getFullYear()) {
+    const w = theme && theme.when;
+    if (!w) return '';
+    if (w.term != null) return `${Math.floor(w.term / 2) + 1}月${termDay(year, w.term)}日`;
+    if (w.solar) return `${w.solar[0]}月${w.solar[1]}日`;
+    if (w.mother) return `5月${1 + ((0 - new Date(year, 4, 1).getDay() + 7) % 7) + 7}日`; // 5月第二个周日
+    if (w.lunar) {
+      let map = _lunarDatesCache.get(year);
+      if (!map) {
+        map = new Map();
+        for (let day = 1; day <= 366; day++) {
+          const dt = new Date(year, 0, day);
+          if (dt.getFullYear() !== year) break;
+          const lun = solarToLunar(dt.getFullYear(), dt.getMonth() + 1, dt.getDate());
+          if (lun && !lun.isLeap) {
+            const key = `${lun.month},${lun.day}`;
+            if (!map.has(key)) map.set(key, `${dt.getMonth() + 1}月${dt.getDate()}日`);
+          }
+        }
+        _lunarDatesCache.set(year, map);
+      }
+      return map.get(`${w.lunar[0]},${w.lunar[1]}`) || '';
+    }
+    return '';
+  }
+
   // 用 Canvas 绘制金句卡片，返回 dataURL(2x)。
-  // festive=false 关掉节日/节气背景；themeId 指定主题名（设置页预览用，优先于 festive）
-  function drawShareCard({ text, title, site, url, festive = true, themeId = '' }) {
+  // festive=false 关掉节日/节气背景；themeId 指定主题名（设置页预览用，优先级最高）；
+  // defaultTheme 是无命中时的兜底风格名（card_default_theme 设置）
+  function drawShareCard({ text, title, site, url, festive = true, themeId = '', defaultTheme = '' }) {
     const theme = themeId ? (THEME_LIST.find((t) => t.name === themeId) || null)
-      : (festive === false ? null : resolveTheme(new Date()));
+      : ((festive === false ? null : resolveTheme(new Date()))
+        || (defaultTheme ? THEME_LIST.find((t) => t.name === defaultTheme) || null : null));
     const W = 720, PAD = 56, DPR = 2;
     // 先用离屏 canvas 测量文字行数
     const meas = document.createElement('canvas').getContext('2d');
@@ -993,9 +1026,10 @@
     const qr = o.shot_qr ? buildQrMatrix(url) : null;
     const brand = o.shot_brand ? SHOT_BRAND : '';
     const when = o.shot_time ? fmtShotTime(time) : '';
-    // theme_id 是设置页预览的临时指定（不落 storage），优先于开关
+    // theme_id 是设置页预览的临时指定（不落 storage），优先于开关与默认风格
     const theme = o.theme_id ? (THEME_LIST.find((t) => t.name === o.theme_id) || null)
-      : (o.card_festival_bg === false ? null : resolveTheme(new Date(time)));
+      : ((o.card_festival_bg === false ? null : resolveTheme(new Date(time)))
+        || (o.card_default_theme ? THEME_LIST.find((t) => t.name === o.card_default_theme) || null : null));
     if (!qr && !brand && !when && !theme) return dataUrl;
 
     const overlay = o.shot_qr_overlay === true;
@@ -1185,6 +1219,7 @@
     paintWhiteCard,
     paintCardAccent,
     resolveTheme,
+    themeDateInYear,
     THEME_LIST,
     fmtShotTime,
     drawShareCard,

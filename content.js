@@ -7,14 +7,20 @@
   const serverOrigin = safeOrigin(SERVER);
   const card = globalThis.__acCard; // 绘制与预览原语见 card.js（同一隔离世界，manifest 先加载）
 
-  // 节日/节气背景开关：模块级镜像读取（与 capture.js 同模式），生成卡片的点击链路保持同步，
-  // 不在点击后临时查 storage —— showPreview 的自动复制依赖 user gesture 不能等回调
+  // 节日/节气背景开关 + 无命中兜底风格：模块级镜像读取（与 capture.js 同模式），
+  // 生成卡片的点击链路保持同步，不在点击后临时查 storage —— showPreview 的自动复制依赖 user gesture 不能等回调
   let festiveBg = true;
-  chrome.storage.local.get({ card_festival_bg: true }, (r) => {
-    if (r && r.card_festival_bg === false) festiveBg = false;
+  let defaultTheme = '';
+  chrome.storage.local.get({ card_festival_bg: true, card_default_theme: '' }, (r) => {
+    if (r) {
+      if (r.card_festival_bg === false) festiveBg = false;
+      defaultTheme = r.card_default_theme || '';
+    }
   });
   chrome.storage.onChanged.addListener((changes, area) => {
-    if (area === 'local' && changes.card_festival_bg) festiveBg = changes.card_festival_bg.newValue !== false;
+    if (area !== 'local') return;
+    if (changes.card_festival_bg) festiveBg = changes.card_festival_bg.newValue !== false;
+    if (changes.card_default_theme) defaultTheme = changes.card_default_theme.newValue || '';
   });
 
   // 截图时临时隐藏扩展自身 UI：capture.js 与本脚本同隔离世界，直接走全局钩子。
@@ -260,7 +266,7 @@
     window.getSelection()?.removeAllRanges();
     pendingQuote = null;
     try {
-      const dataUrl = card.drawShareCard({ text: q.text, title: document.title, site: location.host, url: pageUrl(), festive: festiveBg });
+      const dataUrl = card.drawShareCard({ text: q.text, title: document.title, site: location.host, url: pageUrl(), festive: festiveBg, defaultTheme });
       card.showPreview(shadow, dataUrl, { alt: '划线分享卡片预览' });
       recordQuoteShare(q); // 记录划线（登录态），并即时给页面加虚线
     } catch (e) {
