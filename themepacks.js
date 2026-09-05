@@ -55,7 +55,13 @@
     const cached = await new Promise((r) =>
       chrome.storage.local.get({ [cacheKey]: null }, (v) => r(v[cacheKey]))
     );
-    if (!force && cached && Date.now() - cached.fetched_at < MANIFEST_TTL) return cached;
+    // 缓存 24h；但缓存里查不到今天时（包刚扩充/新部署）要尽快重拉自愈，
+    // 否则要等整整一天才能看到新增日期——重拉节流 10 分钟防网络差时反复打
+    const todayCovered = cached && pack.resolve(cached, new Date());
+    if (!force && cached && Date.now() - cached.fetched_at < MANIFEST_TTL) {
+      if (todayCovered) return cached;
+      if (Date.now() - cached.fetched_at < 10 * 60 * 1000) return cached;
+    }
     try {
       // 8 秒超时：pages.dev 不可达时不能让 await 链挂死（预览/发布都依赖它返回）
       const res = await fetch(pack.base + '/manifest.json', { cache: 'no-cache', signal: AbortSignal.timeout(8000) });
@@ -96,10 +102,10 @@
     globalThis.__acThemePack = null;
   }
 
-  async function refreshPack(pack) {
+  async function refreshPack(pack, force = false) {
     const st = state.get(pack.id);
     if (!st.enabled) return;
-    st.manifest = await fetchManifest(pack);
+    st.manifest = await fetchManifest(pack, force);
     await publish();
   }
 
@@ -147,7 +153,8 @@
       const k = `pack_${p.id}`;
       if (!changes[k]) continue;
       state.get(p.id).enabled = changes[k].newValue === true;
-      if (state.get(p.id).enabled) refreshPack(p);
+      // 手动开启 = 明确要最新清单，强制重拉（也是用户遇到清单过旧时的自救手段）
+      if (state.get(p.id).enabled) refreshPack(p, true);
       else publish();
     }
     if (changes.card_default_theme) warmDefaultPack();
