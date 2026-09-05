@@ -2914,11 +2914,17 @@
     return '';
   }
 
-  // 主题包图片 cover 裁剪：填满 dst 矩形（居中裁切）
-  function drawImageCover(ctx, img, x, y, w, h) {
-    const s = Math.max(w / img.naturalWidth, h / img.naturalHeight);
-    const iw = img.naturalWidth * s, ih = img.naturalHeight * s;
-    ctx.drawImage(img, x + (w - iw) / 2, y + (h - ih) / 2, iw, ih);
+  // 主题包图片整体平均色（按 1x1 缩绘取样），用于海报外留白的底色延伸
+  function imageAvgColor(img) {
+    if (img.__acAvg) return img.__acAvg;
+    const c = document.createElement('canvas');
+    c.width = 1;
+    c.height = 1;
+    const x = c.getContext('2d', { willReadFrequently: true });
+    x.drawImage(img, 0, 0, 1, 1);
+    const d = x.getImageData(0, 0, 1, 1).data;
+    img.__acAvg = `rgb(${d[0]},${d[1]},${d[2]})`;
+    return img.__acAvg;
   }
 
   // 用 Canvas 绘制金句卡片，返回 dataURL(2x)。
@@ -2977,7 +2983,10 @@
     const hintY = qrTop + qrPx + 17;
     const srcTitleY = dividerY + 18;
     const srcDomainY = dividerY + 44;
-    const H = dividerY + (qr ? Math.max(64, hintY - dividerY + 9) : 64) + 34; // 卡片底边 = H - 28
+    let H = dividerY + (qr ? Math.max(64, hintY - dividerY + 9) : 64) + 34; // 卡片底边 = H - 28
+    // 主题包版式：卡片高度保底 960（3:4 海报在 720 宽下正好满幅 720x960，零裁切），
+    // 引文更长时卡片才长高，长出的部分以海报底边色延伸（几乎全被面板盖住）
+    if (usePack) H = Math.max(960, H);
 
     const canvas = document.createElement('canvas');
     canvas.width = W * DPR;
@@ -2986,10 +2995,16 @@
     ctx.scale(DPR, DPR);
 
     // 渐变底 + 装饰 + 白色圆角卡片（卡内再铺同款装饰的淡水印）；
-    // 主题包版式（A）改为：主题图 cover 铺满整卡 + 下部半透明白面板，无卡内水印/大图标
+    // 主题包版式（A）：海报按 720x960 满幅完整显示（不裁切，上下烙字都在），
+    // 下部叠半透明白面板，无卡内水印/大图标
     const cx = 28, cy = 28, cw = W - 56, ch = H - 56, r = 20;
     if (usePack) {
-      drawImageCover(ctx, pack.img, 0, 0, W, H);
+      // 背景铺海报整体平均色，承接留白；海报等比、顶端对齐完整显示（任何长宽比都不裁切不变形）
+      ctx.fillStyle = imageAvgColor(pack.img);
+      ctx.fillRect(0, 0, W, H);
+      const s = Math.min(W / pack.img.naturalWidth, H / pack.img.naturalHeight);
+      const iw = pack.img.naturalWidth * s, ih = pack.img.naturalHeight * s;
+      ctx.drawImage(pack.img, (W - iw) / 2, 0, iw, ih);
       ctx.save();
       ctx.fillStyle = 'rgba(255,255,255,0.93)';
       ctx.shadowColor = 'rgba(31,36,48,0.12)';
