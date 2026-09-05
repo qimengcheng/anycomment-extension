@@ -31,6 +31,19 @@
     .ac-switch input:checked + .ac-switch-slider { background: #4f6ef7; }
     .ac-switch input:checked + .ac-switch-slider:before { transform: translateX(18px); }
     select { font: inherit; padding: 5px 8px; border: 1px solid #dfe3ee; border-radius: 7px; background: #fff; color: #1f2430; }
+    /* 可搜索选择器：选项 500+，替代原生 select */
+    .pk-btn { min-width: 190px; max-width: 280px; display: flex; align-items: center; justify-content: space-between; gap: 8px; font: inherit; padding: 6px 10px; border: 1px solid #dfe3ee; border-radius: 7px; background: #fff; color: #1f2430; cursor: pointer; }
+    .pk-btn .pk-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .pk-caret { color: #8a90a5; flex: 0 0 auto; }
+    .pk-panel { position: fixed; z-index: 60; background: #fff; border: 1px solid #dfe3ee; border-radius: 10px; box-shadow: 0 8px 24px rgba(31,36,48,.18); max-height: 390px; display: flex; flex-direction: column; }
+    .pk-search { margin: 8px; padding: 6px 9px; border: 1px solid #dfe3ee; border-radius: 7px; font: inherit; outline: none; }
+    .pk-search:focus { border-color: #4f6ef7; }
+    .pk-list { overflow: auto; padding: 0 5px 6px; }
+    .pk-group { font-size: 12px; color: #8a90a5; padding: 8px 8px 3px; }
+    .pk-item { padding: 6px 9px; border-radius: 7px; cursor: pointer; font-size: 13px; }
+    .pk-item:hover { background: #eef2ff; }
+    .pk-item.sel { color: #2f54eb; background: #eef2ff; font-weight: 600; }
+    .pk-empty { color: #8a90a5; font-size: 12px; padding: 8px; }
     .segs { display: flex; gap: 6px; flex-wrap: wrap; }
     .segs label { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border: 1px solid #dfe3ee; border-radius: 16px; cursor: pointer; font-size: 13px; }
     .segs label:has(input:checked) { border-color: #4f6ef7; background: #eef2ff; color: #2f54eb; }
@@ -73,11 +86,11 @@
           <div id="pack_rows"></div>
           <div class="row">
             <span class="txt"><b>预览指定主题</b><span>只影响右侧效果预览，不保存；选「按今天日期」则预览实际命中的背景</span></span>
-            <select id="theme_pick"></select>
+            <div id="theme_pick" class="pk"></div>
           </div>
           <div class="row">
-            <span class="txt"><b>默认背景风格</b><span>当天没有命中任何节日/节气时使用的背景，可选默认蓝渐变或任一节日、节气风格；选了风格后，即使上面的开关关闭它也会一直生效</span></span>
-            <select id="card_default_theme"></select>
+            <span class="txt"><b>默认背景风格</b><span>当天没有命中任何主题时使用的背景，选项与预览指定主题一致；选了风格后，即使上面的开关关闭它也会一直生效</span></span>
+            <div id="card_default_theme" class="pk"></div>
           </div>
         </div>
 

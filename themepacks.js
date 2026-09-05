@@ -99,16 +99,44 @@
     await publish();
   }
 
-  // 开关读取与变更监听：关掉立即重新发布（可能回落到后面的包或 null）
-  chrome.storage.local.get(
-    Object.fromEntries(PACKS.map((p) => [`pack_${p.id}`, false])),
-    (v) => {
-      for (const p of PACKS) {
-        state.get(p.id).enabled = v[`pack_${p.id}`] === true;
-        if (state.get(p.id).enabled) refreshPack(p);
-      }
+  // 开关读取与变更监听：关掉立即重新发布（可能回落到后面的包或 null）。
+  // 所有包的 manifest 都常拉（默认风格兜底 card_default_theme 指向包条目时需要同步解析），
+  // 但只为开启的包预取当天图
+  async function init() {
+    const v = await new Promise((r) =>
+      chrome.storage.local.get(
+        { ...Object.fromEntries(PACKS.map((p) => [`pack_${p.id}`, false])), card_default_theme: '' },
+        (x) => r(x)
+      )
+    );
+    for (const p of PACKS) {
+      const st = state.get(p.id);
+      st.enabled = v[`pack_${p.id}`] === true;
+      st.manifest = await fetchManifest(p);
     }
-  );
+    await publish();
+    await warmDefaultPack();
+  }
+  // card_default_theme 指向包条目（pack_<id>:<key>）时预热图片缓存，
+  // 供 card.js 的 defaultTheme 同步解析（entrySync）命中
+  async function warmDefaultPack() {
+    const v = await new Promise((r) => chrome.storage.local.get({ card_default_theme: '' }, (x) => r(x.card_default_theme)));
+    const val = v || '';
+    if (!val.startsWith('pack_')) return;
+    const ci = val.indexOf(':');
+    const id = val.slice(5, ci);
+    const key = val.slice(ci + 1);
+    const pack = PACKS.find((p) => p.id === id);
+    const st = state.get(id);
+    if (!pack || !st || !st.manifest || st.images.has(key)) return;
+    const e = pack.entry(st.manifest, key);
+    if (!e) return;
+    try {
+      st.images.set(key, await loadImage(pack.imageUrl(e.file)));
+    } catch (err) {
+      // 加载失败保持无兜底
+    }
+  }
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'local') return;
     for (const p of PACKS) {
@@ -118,7 +146,9 @@
       if (state.get(p.id).enabled) refreshPack(p);
       else publish();
     }
+    if (changes.card_default_theme) warmDefaultPack();
   });
+  init();
 
   // 设置页预览用接口
   globalThis.__acThemePacks = {
@@ -132,7 +162,7 @@
       await publish();
       return st.manifest;
     },
-    // 按 key 取 { name, img }（含懒加载），供预览显式绘制
+    // 按 key 取 { name, label, img }（含懒加载），供预览显式绘制
     async entry(id, key) {
       const pack = PACKS.find((p) => p.id === id);
       const st = state.get(id);
@@ -149,6 +179,16 @@
           return null;
         }
       }
+      return { name: e.name, label: e.label || e.name, img };
+    },
+    // 同步版本：只读内存缓存（图片须已预热），供 card.js 解析 defaultTheme 兜底
+    entrySync(id, key) {
+      const pack = PACKS.find((p) => p.id === id);
+      const st = state.get(id);
+      if (!pack || !st || !st.manifest) return null;
+      const e = pack.entry(st.manifest, key);
+      const img = st.images.get(key);
+      if (!e || !img) return null;
       return { name: e.name, label: e.label || e.name, img };
     },
   };

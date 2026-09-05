@@ -2928,11 +2928,33 @@
   // packArt 为主题包（DLC）背景：显式传 { name, label, img }（设置页预览）或不传走自动路径
   // 读 themepacks.js 发布的 __acThemePack；优先级：显式 themeId > 主题包 > 节日/节气 > 默认。
   function drawShareCard({ text, title, site, url, festive = true, memorial = false, themeId = '', defaultTheme = '', packArt }) {
-    const pack = packArt !== undefined ? packArt : (globalThis.__acThemePack || null);
-    const usePack = !!(pack && pack.img) && !themeId;
-    const theme = usePack ? null : (themeId ? (THEME_LIST.find((t) => t.name === themeId) || null)
-      : (resolveDayTheme(new Date(), { festival: festive !== false, memorial: memorial === true })
-        || (defaultTheme ? THEME_LIST.find((t) => t.name === defaultTheme) || null : null)));
+    // packArt 显式传值（设置页预览）> 自动路径 __acThemePack（当日命中）> 显式 themeId >
+    // 当天节日/节气/纪念日 > defaultTheme 兜底（主题名或 pack_<id>:<key> 主题包条目，经
+    // entrySync 同步解析——图片须已在引擎缓存，themepacks.js 会按 card_default_theme 预热）
+    let pack = null, usePack = false, theme = null;
+    if (packArt && packArt.img && !themeId) {
+      pack = packArt;
+      usePack = true;
+    } else {
+      const dayPack = !themeId && packArt === undefined ? (globalThis.__acThemePack || null) : null;
+      const dayTheme = resolveDayTheme(new Date(), { festival: festive !== false, memorial: memorial === true });
+      if (dayPack && dayPack.img) {
+        pack = dayPack;
+        usePack = true;
+      } else if (themeId) {
+        theme = THEME_LIST.find((t) => t.name === themeId) || null;
+      } else if (dayTheme) {
+        theme = dayTheme;
+      } else if (defaultTheme && defaultTheme.startsWith('pack_')) {
+        const ci = defaultTheme.indexOf(':');
+        const d = globalThis.__acThemePacks
+          ? globalThis.__acThemePacks.entrySync(defaultTheme.slice(5, ci), defaultTheme.slice(ci + 1))
+          : null;
+        if (d && d.img) { pack = d; usePack = true; }
+      } else if (defaultTheme) {
+        theme = THEME_LIST.find((t) => t.name === defaultTheme) || null;
+      }
+    }
     const W = 720, PAD = 56, DPR = 2;
     const PACK_PANEL_TOP = 420; // 主题包版式（A）：上半整块给主题图，半透明白面板从这里铺到卡底
     // 先用离屏 canvas 测量文字行数

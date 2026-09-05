@@ -1,13 +1,13 @@
-// AnyComment 截图设置页：读写 chrome.storage.local 的 shot_* 配置 + 展示 commands 绑定 + 实时预览
+// AnyComment 截图设置页：读写 chrome.storage.local 的 shot_* 配置 + 主题包开关 + 实时预览
 (() => {
   const card = globalThis.__acCard;
+  const packsApi = globalThis.__acThemePacks || null;
+  const packs = (packsApi && packsApi.packs) || [];
   const $ = (id) => document.getElementById(id);
   const KEYS = Object.keys(card.SHOT_DEFAULTS);
   const SAMPLE_URL = 'https://anycomment.qimengcheng-47e.workers.dev/产品笔记/2026-09-网页截图';
   let cfg = { ...card.SHOT_DEFAULTS };
 
-  // 主题包（DLC）开关：按注册表动态生成（新增包零改动），键名 pack_<id>，默认关
-  const packs = (globalThis.__acThemePacks && globalThis.__acThemePacks.packs) || [];
   const packDefaults = Object.fromEntries(packs.map((p) => [`pack_${p.id}`, false]));
   chrome.storage.local.get({ ...card.SHOT_DEFAULTS, ...packDefaults }, (v) => {
     cfg = { ...card.SHOT_DEFAULTS, ...v };
@@ -43,13 +43,14 @@
       const el = $(`pack_${p.id}`);
       if (el) el.checked = cfg[`pack_${p.id}`] === true;
     }
-    $('card_default_theme').value = cfg.card_default_theme || '';
     $(cfg.shot_qr_overlay ? 'pos_overlay' : 'pos_strip').checked = true;
     $('cornerBox').classList.toggle('off', !cfg.shot_qr_overlay || !cfg.shot_qr);
     const corner = document.querySelector(`input[name="corner"][value="${cfg.shot_qr_corner}"]`);
     if (corner) corner.checked = true;
     $('shot_default_mode').value = cfg.shot_default_mode;
-    updateAutoLabel();
+    themePick.refresh(autoLabel());
+    defaultPick.refresh('默认蓝渐变');
+    updatePackStatuses();
     drawPreview();
   }
 
@@ -58,7 +59,7 @@
   $('shot_brand').addEventListener('change', (e) => save({ shot_brand: e.target.checked }));
   $('card_festival_bg').addEventListener('change', (e) => save({ card_festival_bg: e.target.checked }));
   $('card_memorial_bg').addEventListener('change', (e) => save({ card_memorial_bg: e.target.checked }));
-  $('card_default_theme').addEventListener('change', (e) => save({ card_default_theme: e.target.value }));
+  // 主题包开关行由 buildPackRows 动态生成，监听也在此处绑定（行生成前 DOM 尚不存在）
   $('pos_overlay').addEventListener('change', () => save({ shot_qr_overlay: true }));
   $('pos_strip').addEventListener('change', () => save({ shot_qr_overlay: false }));
   document.querySelectorAll('input[name="corner"]').forEach((r) => {
@@ -73,7 +74,7 @@
   const LABELS = {
     'capture-selection': '框选区域截图',
     'capture-viewport': '截取当前屏幕区域',
-    'capture-fullpage': '截取完整页面',
+    'capture-fullpage': '完整页面',
   };
   chrome.commands.getAll((cmds) => {
     const rows = cmds
@@ -83,23 +84,164 @@
     $('keys').tBodies[0].innerHTML = rows || '<tr><td class="k">未读到命令</td><td class="v">-</td></tr>';
   });
 
-  // ========== 实时预览：造一张示例网页图，按当前设置走真实的合成函数 ==========
-  let sample = null;
-  // 主题预览选择：仅本页临时生效，不写入 storage
-  let previewTheme = '';
+  // ========== 可搜索选择器：选项 500+（节日/节气/纪念日/主题包全量），原生 select 难用 ==========
+  let openPicker = null; // 同一时间只开一个面板
+  function makePicker(host, { onChange }) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'pk-btn';
+    const lbl = document.createElement('span');
+    lbl.className = 'pk-label';
+    const caret = document.createElement('span');
+    caret.className = 'pk-caret';
+    caret.textContent = '▾';
+    btn.append(lbl, caret);
+    host.append(btn);
+    let value = '';
+    let fallback = '';
+    let labels = new Map(); // value -> label
+    let panel = null, search = null, list = null;
 
-  // 预览选择器：节日在前、节气居中、纪念日在后分组，每项带当年实际日期（腊八这类农历年末节日算"今年过的那次"）
-  const themeSel = $('theme_pick');
-  function buildThemeOptions() {
-    const withDate = (t) => `${t.name}（${card.themeDateInYear(t)}）`;
-    themeSel.innerHTML = `<option value=""></option>`
-      + `<optgroup label="节日">${card.THEME_LIST.filter((t) => !t.isTerm && !t.isMemorial).map((t) => `<option value="${t.name}">${withDate(t)}</option>`).join('')}</optgroup>`
-      + `<optgroup label="二十四节气">${card.THEME_LIST.filter((t) => t.isTerm).map((t) => `<option value="${t.name}">${withDate(t)}</option>`).join('')}</optgroup>`
-      + `<optgroup label="纪念日">${card.THEME_LIST.filter((t) => t.isMemorial).map((t) => `<option value="${t.name}">${withDate(t)}</option>`).join('')}</optgroup>`
-      + packs.map((p) => `<optgroup label="${p.name}" id="pack_opt_${p.id}"></optgroup>`).join('');
-    themeSel.addEventListener('change', () => { previewTheme = themeSel.value; drawPreview(); });
+    function close() {
+      if (panel) { panel.remove(); panel = null; }
+      if (openPicker === close) openPicker = null;
+      document.removeEventListener('mousedown', onDocDown, true);
+    }
+    function onDocDown(e) {
+      if (panel && !panel.contains(e.target) && !btn.contains(e.target)) close();
+    }
+    function renderList(q) {
+      list.innerHTML = '';
+      let shown = 0;
+      for (const g of groups) {
+        const items = g.items.filter((it) => !q || it.label.toLowerCase().includes(q));
+        if (!items.length) continue;
+        const h = document.createElement('div');
+        h.className = 'pk-group';
+        h.textContent = g.label;
+        list.append(h);
+        for (const it of items) {
+          const d = document.createElement('div');
+          d.className = 'pk-item' + (it.value === value ? ' sel' : '');
+          d.textContent = it.label;
+          d.addEventListener('click', () => {
+            value = it.value;
+            lbl.textContent = it.label;
+            close();
+            onChange(value);
+          });
+          list.append(d);
+          shown++;
+        }
+      }
+      if (!shown) {
+        const d = document.createElement('div');
+        d.className = 'pk-empty';
+        d.textContent = '没有匹配的选项';
+        list.append(d);
+      }
+    }
+    function open() {
+      if (panel) return;
+      if (openPicker) openPicker();
+      panel = document.createElement('div');
+      panel.className = 'pk-panel';
+      search = document.createElement('input');
+      search.className = 'pk-search';
+      search.placeholder = '搜索：花名 / 主题 / 日期…';
+      list = document.createElement('div');
+      list.className = 'pk-list';
+      panel.append(search, list);
+      document.body.append(panel);
+      const r = btn.getBoundingClientRect();
+      const pw = Math.max(300, r.width);
+      panel.style.width = pw + 'px';
+      if (r.bottom + 396 > window.innerHeight && r.top > 400) panel.style.top = Math.max(8, r.top - 396) + 'px';
+      else panel.style.top = r.bottom + 6 + 'px';
+      panel.style.left = Math.max(8, Math.min(r.left, window.innerWidth - pw - 8)) + 'px';
+      search.addEventListener('input', () => renderList(search.value.trim().toLowerCase()));
+      document.addEventListener('mousedown', onDocDown, true);
+      openPicker = close;
+      search.focus();
+      renderList('');
+    }
+    btn.addEventListener('click', () => (panel ? close() : open()));
+    let groups = [];
+    return {
+      setOptions(g) { groups = g; labels = new Map(); for (const gr of g) for (const it of gr.items) labels.set(it.value, it.label); lbl.textContent = labels.get(value) || fallback; },
+      refresh(fb) { fallback = fb || ''; if (!labels.has(value)) lbl.textContent = labels.get(value) || fallback; },
+      get value() { return value; },
+    };
   }
-  // 主题包：开关行 + 预览分组都按注册表动态生成；清单从各包 Pages 拉取（异步），失败则该组隐藏
+
+  // 预览指定主题：'' = 按今天日期（标签随命中动态变化）
+  let previewTheme = '';
+  const themePick = makePicker($('theme_pick'), {
+    onChange: (v) => { previewTheme = v; drawPreview(); },
+  });
+  // 默认背景风格：'' = 默认蓝渐变；选项与预览指定主题一致（含纪念日与主题包条目）
+  const defaultPick = makePicker($('card_default_theme'), {
+    onChange: (v) => save({ card_default_theme: v }),
+  });
+
+  function themeGroups() {
+    const withDate = (t) => `${t.name}（${card.themeDateInYear(t)}）`;
+    return [
+      { label: '节日', items: card.THEME_LIST.filter((t) => !t.isTerm && !t.isMemorial).map((t) => ({ value: t.name, label: withDate(t) })) },
+      { label: '二十四节气', items: card.THEME_LIST.filter((t) => t.isTerm).map((t) => ({ value: t.name, label: withDate(t) })) },
+      { label: '纪念日', items: card.THEME_LIST.filter((t) => t.isMemorial).map((t) => ({ value: t.name, label: withDate(t) })) },
+    ];
+  }
+  // 主题包分组：清单从各包 Pages 拉取（异步），拉取失败的包整组隐藏
+  async function packGroups() {
+    const out = [];
+    for (const p of packs) {
+      let m = null;
+      try { m = await packsApi.ensure(p.id); } catch (e) { /* 忽略 */ }
+      if (!m || !m.days) continue;
+      const items = Object.keys(m.days).sort().map((k) => {
+        const e = p.entry(m, k);
+        return { value: `pack_${p.id}:${k}`, label: e.label || e.name };
+      });
+      if (items.length) out.push({ label: p.name, items });
+    }
+    return out;
+  }
+  async function buildPickers() {
+    const pg = await packGroups();
+    themePick.setOptions([...themeGroups(), ...pg]);
+    defaultPick.setOptions([{ label: '默认', items: [{ value: '', label: '默认蓝渐变' }] }, ...themeGroups(), ...pg]);
+    themePick.refresh(autoLabel());
+    defaultPick.refresh('默认蓝渐变');
+    updatePackStatuses();
+  }
+
+  // 首项说明跟随今天的命中结果（含纪念日开关）；主题包按注册表顺序优先（与 drawShareCard 一致）
+  function autoLabel() {
+    const today = card.resolveDayTheme(new Date(), { festival: cfg.card_festival_bg !== false, memorial: cfg.card_memorial_bg === true });
+    let label = today ? today.name : (cfg.card_default_theme || '默认蓝渐变');
+    // 默认风格指向主题包条目时解析成友好名（如「1月1日 · 梅花」）
+    const defVal = cfg.card_default_theme || '';
+    if (!today && defVal.startsWith('pack_')) {
+      const ci = defVal.indexOf(':');
+      const p = packs.find((x) => x.id === defVal.slice(5, ci));
+      const m = p && packsApi ? packsApi.manifest(p.id) : null;
+      const e = p && m ? p.entry(m, defVal.slice(ci + 1)) : null;
+      if (e) label = e.label || e.name;
+    }
+    for (const p of packs) {
+      if (cfg[`pack_${p.id}`] !== true) continue;
+      const m = packsApi.manifest(p.id);
+      const key = p.resolve(m, new Date());
+      if (key) {
+        const e = p.entry(m, key);
+        if (e) { label = `${p.name} · ${e.label || e.name}`; break; }
+      }
+    }
+    return `按今天日期（${label}）`;
+  }
+
+  // 主题包：开关行按注册表动态生成（新增包零改动）
   function buildPackRows() {
     const host = $('pack_rows');
     host.innerHTML = packs.map((p) => `
@@ -111,28 +253,11 @@
       $(`pack_${p.id}`).addEventListener('change', (e) => save({ [`pack_${p.id}`]: e.target.checked }));
     }
   }
-  async function buildPackOptions() {
-    for (const p of packs) {
-      const og = document.getElementById(`pack_opt_${p.id}`);
-      if (!og) continue;
-      let m = null;
-      try { m = await globalThis.__acThemePacks.ensure(p.id); } catch (e) { /* 忽略，分组隐藏 */ }
-      const og2 = document.getElementById(`pack_opt_${p.id}`); // await 之后可能已被重排
-      if (!og2) continue;
-      const days = m && m.days ? Object.keys(m.days).sort() : [];
-      if (!days.length) { og2.remove(); updatePackStatuses(); continue; }
-      og2.innerHTML = days.map((k) => {
-        const e = p.entry(m, k);
-        return `<option value="pack_${p.id}:${k}">${e.label || e.name}</option>`;
-      }).join('');
-    }
-    updatePackStatuses();
-  }
   function updatePackStatuses() {
     for (const p of packs) {
       const el = $(`pack_status_${p.id}`);
       if (!el) continue;
-      const m = globalThis.__acThemePacks.manifest(p.id);
+      const m = packsApi ? packsApi.manifest(p.id) : null;
       const count = m && m.days ? Object.keys(m.days).length : 0;
       if (cfg[`pack_${p.id}`] === true && count) {
         el.textContent = `已启用 · 已收录 ${count} 天（版本 v${m.version}），每天自动加载当天内容，仅拉取约 0.2MB`;
@@ -143,31 +268,11 @@
       }
     }
   }
-  // 首项说明跟随今天的命中结果（含纪念日开关）；无命中时提示将使用的兜底默认风格。
-  // 主题包按注册表顺序优先：开启且当天有收录时展示包内条目名（与 drawShareCard 优先级一致）
-  function updateAutoLabel() {
-    const today = card.resolveDayTheme(new Date(), { festival: cfg.card_festival_bg !== false, memorial: cfg.card_memorial_bg === true });
-    let label = today ? today.name : (cfg.card_default_theme || '默认蓝渐变');
-    for (const p of packs) {
-      if (cfg[`pack_${p.id}`] !== true) continue;
-      const m = globalThis.__acThemePacks.manifest(p.id);
-      const key = p.resolve(m, new Date());
-      if (key) {
-        const e = p.entry(m, key);
-        if (e) { label = `${p.name} · ${e.name}`; break; }
-      }
-    }
-    themeSel.querySelector('option').textContent = `按今天日期（${label}）`;
-  }
   buildPackRows();
-  buildThemeOptions();
-  buildPackOptions();
+  buildPickers();
 
-  // 默认背景风格：默认蓝渐变 + 全部节日与节气风格（当天无命中时生效；关掉节日开关时它就是常驻风格）。
-  // 纪念日风格不进此列表——严肃主题不做常驻默认，只由纪念日开关控制
-  $('card_default_theme').innerHTML = `<option value="">默认蓝渐变</option>`
-    + `<optgroup label="节日">${card.THEME_LIST.filter((t) => !t.isTerm && !t.isMemorial).map((t) => `<option value="${t.name}">${t.name}</option>`).join('')}</optgroup>`
-    + `<optgroup label="二十四节气">${card.THEME_LIST.filter((t) => t.isTerm).map((t) => `<option value="${t.name}">${t.name}</option>`).join('')}</optgroup>`;
+  // ========== 实时预览：造一张示例网页图，按当前设置走真实的合成函数 ==========
+  let sample = null;
 
   function makeSample() {
     const c = document.createElement('canvas');
@@ -203,6 +308,12 @@
   async function drawPreview() {
     if (!sample) sample = makeSample();
     const img = await loadImage(sample);
+    // 默认风格为主题包条目时先预热引擎缓存，defaultTheme 的同步解析才能命中
+    const defVal = cfg.card_default_theme || '';
+    if (defVal.startsWith('pack_') && globalThis.__acThemePacks) {
+      const i = defVal.indexOf(':');
+      try { await globalThis.__acThemePacks.entry(defVal.slice(5, i), defVal.slice(i + 1)); } catch (e) { /* 忽略 */ }
+    }
     try {
       const opts = { ...cfg };
       if (previewTheme) opts.theme_id = previewTheme;
@@ -214,8 +325,8 @@
       $('previewImg').style.display = 'none';
     }
     // 划线分享金句卡片走真实 drawShareCard，与截图预览共用主题选择与开关（theme_id 同样只在本页临时生效）
-    // 主题包预览：theme_pick 选了 pack_<id>:<key> 时显式传 packArt；未指定主题且包开启时走
-    // 自动路径（card.js 读 __acThemePack）
+    // 主题包预览：选中 pack_<id>:<key> 时显式传 packArt；未指定主题时走自动路径
+    //（含 card_default_theme 为主题包条目的情况，card.js 经 entrySync 同步解析）
     try {
       const opts2 = {
         text: '选中网页里的一段文字，点「分享」，就能生成这样一张带二维码的金句卡片。',
