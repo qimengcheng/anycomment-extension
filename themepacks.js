@@ -186,11 +186,12 @@
       }
       return { name: e.name, label: e.label || e.name, img };
     },
-    // 同步版本：只读内存缓存（图片须已预热），供 card.js 解析 defaultTheme 兜底
+    // 同步版本：只读内存缓存（图片须已预热），供 card.js 解析 defaultTheme 兜底。
+    // 包被关闭时返回 null——开关控制该包的一切效果
     entrySync(id, key) {
       const pack = PACKS.find((p) => p.id === id);
       const st = state.get(id);
-      if (!pack || !st || !st.manifest) return null;
+      if (!pack || !st || !st.enabled || !st.manifest) return null;
       const e = pack.entry(st.manifest, key);
       const img = st.images.get(key);
       if (!e || !img) return null;

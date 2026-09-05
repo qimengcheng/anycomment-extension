@@ -12,6 +12,7 @@
   chrome.storage.local.get({ ...card.SHOT_DEFAULTS, ...packDefaults }, (v) => {
     cfg = { ...card.SHOT_DEFAULTS, ...v };
     render();
+    buildPickers(); // cfg 就绪后才能按包开关收录分组（同步阶段的 buildPickers 只会看到空 cfg）
   });
   // 别处（如另一个设置页标签）改了立即同步
   chrome.storage.onChanged.addListener((changes, area) => {
@@ -199,6 +200,7 @@
   async function packGroups() {
     const out = [];
     for (const p of packs) {
+      if (cfg[`pack_${p.id}`] !== true) continue; // 关闭的包不进选择器
       let m = null;
       try { m = await packsApi.ensure(p.id); } catch (e) { /* 忽略 */ }
       if (!m || !m.days) continue;
@@ -253,7 +255,19 @@
         <label class="ac-switch"><input type="checkbox" id="pack_${p.id}" /><span class="ac-switch-slider"></span></label>
       </div>`).join('');
     for (const p of packs) {
-      $(`pack_${p.id}`).addEventListener('change', (e) => save({ [`pack_${p.id}`]: e.target.checked }));
+      $(`pack_${p.id}`).addEventListener('change', async (e) => {
+        // 关包时：预览选中该包条目回退到按今天日期；默认风格指向该包条目也一并复位（包关=效果全停）
+        const prefix = `pack_${p.id}:`;
+        const patch = { [`pack_${p.id}`]: e.target.checked };
+        if (!e.target.checked && (cfg.card_default_theme || '').startsWith(prefix)) patch.card_default_theme = '';
+        save(patch);
+        if (!e.target.checked && previewTheme.startsWith(prefix)) {
+          previewTheme = '';
+          themePick.set('');
+        }
+        await buildPickers();
+        themePick.refresh(autoLabel());
+      });
     }
   }
   function updatePackStatuses() {
@@ -271,8 +285,7 @@
       }
     }
   }
-  buildPackRows();
-  buildPickers();
+  buildPackRows(); // 行先建好，存储回调里的 render 才能设置开关状态与回显
 
   // ========== 实时预览：造一张示例网页图，按当前设置走真实的合成函数 ==========
   let sample = null;
@@ -317,6 +330,15 @@
     if (drawing) return;
     drawing = true;
     try {
+      // 预览选中的包若已被关闭，回退到按今天日期（兜底：开关监听里也会重置）
+      if (previewTheme.startsWith('pack_')) {
+        const ci = previewTheme.indexOf(':');
+        if (cfg[`pack_${previewTheme.slice(5, ci)}`] !== true) {
+          previewTheme = '';
+          themePick.set('');
+          themePick.refresh(autoLabel());
+        }
+      }
       if (!sample) sample = makeSample();
       const img = await loadImage(sample);
       await drawPreviewCards(img);
