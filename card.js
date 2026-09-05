@@ -13,6 +13,7 @@
     card_memorial_bg: false, // 纪念日主题背景（七七、九一八、国家公祭日等严肃主题），默认关闭
     card_default_theme: '', // 当天无命中时的兜底风格：''=默认蓝渐变，或节日主题名/pack_<id>:<key> 主题包条目（关掉节日开关时它就是常驻风格）
     card_pack_shot_bg: false, // 截图分享合成也使用主题包图案作背景（开启且当天命中时生效）
+    card_pack_shot_desat: 0, // 主题包截图背景的去色程度：0=保留原色，100=纯黑白（用户可调）
   };
 
   const fontMain = (size, weight = 600) => `${weight} ${size}px "PingFang SC", "Microsoft YaHei", system-ui, sans-serif`;
@@ -2916,6 +2917,41 @@
   }
 
   // 主题包图片整体平均色（按 1x1 缩绘取样），用于海报外留白的底色延伸
+  // 主题包截图背景呈现参数（v1.57 用户调参器定稿）：曲线 LUT 控制点、提亮、截图垫白、白底浓度
+  const PACK_SHOT = {
+    curve: [[0, 1], [0.08, 0.12], [1, 1]],
+    lighten: 0.8,
+    underlay: 0.7,
+    chip: 0.7,
+  };
+  let packCurveLUT = null;
+  function packCurveBuild() {
+    const pts = PACK_SHOT.curve.slice().sort((a, b) => a[0] - b[0]);
+    const lut = new Uint8ClampedArray(256);
+    for (let i = 0; i < 256; i++) {
+      const x = i / 255;
+      let j = 0;
+      while (j < pts.length - 2 && x > pts[j + 1][0]) j++;
+      const x0 = pts[j][0], y0 = pts[j][1], x1 = pts[j + 1][0], y1 = pts[j + 1][1];
+      const t = x1 > x0 ? Math.min(1, Math.max(0, (x - x0) / (x1 - x0))) : 0;
+      const sm = t * t * (3 - 2 * t); // 段内 smoothstep，过渡平滑
+      lut[i] = Math.round(255 * (y0 + (y1 - y0) * sm));
+    }
+    packCurveLUT = lut;
+  }
+  // 曲线效果：暗部（墨色笔触）压向白色，海报变成浅色纹理纸
+  function packCurveApply(ctx, w, h) {
+    if (!packCurveLUT) packCurveBuild();
+    const d = ctx.getImageData(0, 0, w, h);
+    const px = d.data;
+    for (let i = 0; i < px.length; i += 4) {
+      px[i] = packCurveLUT[px[i]];
+      px[i + 1] = packCurveLUT[px[i + 1]];
+      px[i + 2] = packCurveLUT[px[i + 2]];
+    }
+    ctx.putImageData(d, 0, 0);
+  }
+
   function imageAvgColor(img) {
     if (img.__acAvg) return img.__acAvg;
     const c = document.createElement('canvas');
@@ -3237,14 +3273,17 @@
     const ctx = canvas.getContext('2d');
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     if (packArt) {
-      // 背景去色 90%（saturate 0.1）满铺，截图以正片叠底（multiply）贴上：
-      // 截图浅色区域透出去色花纹，深色内容保持——不透明、无空洞
+      // 背景去色程度来自设置项 card_pack_shot_desat（0=原色，100=黑白）
+      const desat = Math.min(100, Math.max(0, typeof o.card_pack_shot_desat === 'number' ? o.card_pack_shot_desat : 0)) / 100;
+      if (!packCurveLUT) packCurveBuild();
       ctx.save();
-      ctx.filter = 'saturate(0.1)';
+      ctx.filter = `saturate(${1 - desat})`;
       const bs = Math.max(plan.outW / packArt.img.naturalWidth, plan.outH / packArt.img.naturalHeight);
       const biw = packArt.img.naturalWidth * bs, bih = packArt.img.naturalHeight * bs;
       ctx.drawImage(packArt.img, (plan.outW - biw) / 2, (plan.outH - bih) / 2, biw, bih);
       ctx.restore();
+      // 色调曲线：暗部墨色笔触压向白色，海报变成浅色纹理纸（此时画布上只有背景，可整幅处理）
+      packCurveApply(ctx, plan.outW, plan.outH);
       // 提亮 80%（调参器 lighten=80）
       ctx.fillStyle = 'rgba(255,255,255,0.8)';
       ctx.fillRect(0, 0, plan.outW, plan.outH);
@@ -3282,7 +3321,7 @@
       if (packArt) {
         ctx.font = fontMain(plan.fs1, 600);
         const bw = ctx.measureText(wrapText(ctx, brand, plan.maxBrand, 1)[0] || '').width;
-        ctx.fillStyle = 'rgba(255,255,255,0.9)';
+        ctx.fillStyle = `rgba(255,255,255,${PACK_SHOT.chip})`;
         roundRectPath(ctx, plan.textCx - 8 * plan.s, plan.rowY - plan.lh1 / 2, plan.dotW + bw + 16 * plan.s, plan.lh1, 6 * plan.s);
         ctx.fill();
       }
@@ -3299,7 +3338,7 @@
       const t = wrapText(ctx, when, plan.maxWhen, 1)[0] || '';
       if (packArt) {
         const tw = ctx.measureText(t).width;
-        ctx.fillStyle = 'rgba(255,255,255,0.9)';
+        ctx.fillStyle = `rgba(255,255,255,${PACK_SHOT.chip})`;
         roundRectPath(ctx, plan.textRight - tw - 8 * plan.s, plan.rowY - plan.fs2 * 0.7, tw + 16 * plan.s, plan.fs2 * 1.4, 6 * plan.s);
         ctx.fill();
       }

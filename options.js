@@ -41,6 +41,7 @@
     $('card_festival_bg').checked = cfg.card_festival_bg !== false;
     $('card_memorial_bg').checked = cfg.card_memorial_bg === true;
     $('card_pack_shot_bg').checked = cfg.card_pack_shot_bg === true;
+    $('card_pack_shot_desat').value = typeof cfg.card_pack_shot_desat === 'number' ? cfg.card_pack_shot_desat : 0;
     for (const p of packs) {
       const el = $(`pack_${p.id}`);
       if (el) el.checked = cfg[`pack_${p.id}`] === true;
@@ -63,6 +64,7 @@
   $('card_festival_bg').addEventListener('change', (e) => save({ card_festival_bg: e.target.checked }));
   $('card_memorial_bg').addEventListener('change', (e) => save({ card_memorial_bg: e.target.checked }));
   $('card_pack_shot_bg').addEventListener('change', (e) => save({ card_pack_shot_bg: e.target.checked }));
+  $('card_pack_shot_desat').addEventListener('input', (e) => save({ card_pack_shot_desat: Number(e.target.value) }));
   // 主题包开关行由 buildPackRows 动态生成，监听也在此处绑定（行生成前 DOM 尚不存在）
   $('pos_overlay').addEventListener('change', () => save({ shot_qr_overlay: true }));
   $('pos_strip').addEventListener('change', () => save({ shot_qr_overlay: false }));
