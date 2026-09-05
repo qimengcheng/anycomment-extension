@@ -389,10 +389,22 @@
   }
 
   async function drawPreviewCards(img) {
+    // 主题包预览：选中 pack_<id>:<key> 时解析包条目，截图与金句两张预览都显式传 packArt；
+    // 未指定主题时走自动路径（含 card_default_theme 为主题包条目的情况，card.js 经 entrySync 同步解析）
+    let packInfo;
+    if (previewTheme.startsWith('pack_')) {
+      const colon = previewTheme.indexOf(':');
+      packInfo = globalThis.__acThemePacks
+        ? await globalThis.__acThemePacks.entry(previewTheme.slice(5, colon), previewTheme.slice(colon + 1))
+        : null;
+      // 图片未就绪（网络慢/失败）：保持当前预览，与原金句预览行为一致
+      if (!packInfo) return;
+    }
     try {
       const opts = { ...cfg };
-      if (previewTheme) opts.theme_id = previewTheme;
-      const url = card.composeScreenshot({ img, dataUrl: sample, url: SAMPLE_URL, time: Date.now(), opts });
+      // 包条目不能塞进 theme_id（composeScreenshot 匹配不到会整段跳过主题包分支），走显式 packArt
+      if (previewTheme && !packInfo) opts.theme_id = previewTheme;
+      const url = card.composeScreenshot({ img, dataUrl: sample, url: SAMPLE_URL, time: Date.now(), opts, packArt: packInfo });
       const el = $('previewImg');
       el.src = url;
       el.style.display = '';
@@ -400,8 +412,6 @@
       $('previewImg').style.display = 'none';
     }
     // 划线分享金句卡片走真实 drawShareCard，与截图预览共用主题选择与开关（theme_id 同样只在本页临时生效）
-    // 主题包预览：选中 pack_<id>:<key> 时显式传 packArt；未指定主题时走自动路径
-    //（含 card_default_theme 为主题包条目的情况，card.js 经 entrySync 同步解析）
     try {
       const opts2 = {
         text: '选中网页里的一段文字，点「分享」，就能生成这样一张带二维码的金句卡片。',
@@ -413,14 +423,7 @@
         themeId: previewTheme.startsWith('pack_') ? '' : previewTheme,
         defaultTheme: cfg.card_default_theme || '',
       };
-      if (previewTheme.startsWith('pack_')) {
-        const colon = previewTheme.indexOf(':');
-        const id = previewTheme.slice(5, colon);
-        const key = previewTheme.slice(colon + 1);
-        const info = globalThis.__acThemePacks ? await globalThis.__acThemePacks.entry(id, key) : null;
-        if (!info) return;
-        opts2.packArt = info;
-      }
+      if (packInfo) opts2.packArt = packInfo;
       const url2 = card.drawShareCard(opts2);
       const el2 = $('previewShareImg');
       el2.src = url2;

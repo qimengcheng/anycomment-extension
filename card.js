@@ -3226,7 +3226,7 @@
   }
 
   // 把捕获图与二维码/时间/品牌合成一张可下载的图，返回 dataURL
-  function composeScreenshot({ img, dataUrl, url, time = Date.now(), opts = {} }) {
+  function composeScreenshot({ img, dataUrl, url, time = Date.now(), opts = {}, packArt }) {
     const o = { ...SHOT_DEFAULTS, ...opts };
     const W = img.naturalWidth || img.width;
     const H = img.naturalHeight || img.height;
@@ -3239,20 +3239,21 @@
       : (resolveDayTheme(new Date(time), { festival: o.card_festival_bg !== false, memorial: o.card_memorial_bg === true })
         || (o.card_default_theme ? THEME_LIST.find((t) => t.name === o.card_default_theme) || null : null));
     // 主题包图案背景（card_pack_shot_bg 开启时生效）：当日命中的包图替代渐变外框，
-    // 优先级与金句卡片一致：显式 theme_id > 主题包 > 节日/节气 > 默认风格
-    let packArt = null;
-    if (o.card_pack_shot_bg === true && !o.theme_id) {
+    // 优先级与金句卡片一致：显式 packArt（设置页预览）/theme_id > 主题包 > 节日/节气 > 默认风格
+    let shotPack = (packArt && packArt.img && !o.theme_id) ? packArt : null;
+    if (!shotPack && o.card_pack_shot_bg === true && !o.theme_id) {
       const dayPack = globalThis.__acThemePack || null;
       if (dayPack && dayPack.img) {
-        packArt = dayPack;
+        shotPack = dayPack;
       } else if (o.card_default_theme && o.card_default_theme.startsWith('pack_') && globalThis.__acThemePacks) {
         // 默认风格指向包条目时作为兜底（entrySync 带开关守卫，包关闭即 null）
         const ci = o.card_default_theme.indexOf(':');
         const d = globalThis.__acThemePacks.entrySync(o.card_default_theme.slice(5, ci), o.card_default_theme.slice(ci + 1));
-        if (d && d.img) packArt = d;
+        if (d && d.img) shotPack = d;
       }
     }
-    if (!qr && !brand && !when && !theme && !packArt) return dataUrl;
+    const packBg = shotPack;
+    if (!qr && !brand && !when && !theme && !packBg) return dataUrl;
 
     const overlay = o.shot_qr_overlay === true;
     const corner = ['tl', 'tr', 'bl', 'br'].includes(o.shot_qr_corner) ? o.shot_qr_corner : 'br';
@@ -3272,15 +3273,15 @@
     canvas.height = plan.outH;
     const ctx = canvas.getContext('2d');
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    if (packArt) {
+    if (packBg) {
       // 背景去色程度来自设置项 card_pack_shot_desat（0=原色，100=黑白）
       const desat = Math.min(100, Math.max(0, typeof o.card_pack_shot_desat === 'number' ? o.card_pack_shot_desat : 0)) / 100;
       if (!packCurveLUT) packCurveBuild();
       ctx.save();
       ctx.filter = `saturate(${1 - desat})`;
-      const bs = Math.max(plan.outW / packArt.img.naturalWidth, plan.outH / packArt.img.naturalHeight);
-      const biw = packArt.img.naturalWidth * bs, bih = packArt.img.naturalHeight * bs;
-      ctx.drawImage(packArt.img, (plan.outW - biw) / 2, (plan.outH - bih) / 2, biw, bih);
+      const bs = Math.max(plan.outW / packBg.img.naturalWidth, plan.outH / packBg.img.naturalHeight);
+      const biw = packBg.img.naturalWidth * bs, bih = packBg.img.naturalHeight * bs;
+      ctx.drawImage(packBg.img, (plan.outW - biw) / 2, (plan.outH - bih) / 2, biw, bih);
       ctx.restore();
       // 色调曲线：暗部墨色笔触压向白色，海报变成浅色纹理纸（此时画布上只有背景，可整幅处理）
       packCurveApply(ctx, plan.outW, plan.outH);
@@ -3299,7 +3300,7 @@
 
     // 截图裁成圆角贴上，再描一圈淡边；主题包模式下先垫白 70% 再正片叠底（调参器 underlay=70）
     ctx.save();
-    if (packArt) {
+    if (packBg) {
       ctx.fillStyle = 'rgba(255,255,255,0.7)';
       roundRectPath(ctx, plan.imgX, plan.imgY, W, H, plan.imgRadius);
       ctx.fill();
@@ -3318,7 +3319,7 @@
     // 主题包模式背景是去色花纹，文字下垫白色圆角小底保证可读
     ctx.textBaseline = 'middle';
     if (brand) {
-      if (packArt) {
+      if (packBg) {
         ctx.font = fontMain(plan.fs1, 600);
         const bw = ctx.measureText(wrapText(ctx, brand, plan.maxBrand, 1)[0] || '').width;
         ctx.fillStyle = `rgba(255,255,255,${PACK_SHOT.chip})`;
@@ -3336,7 +3337,7 @@
     if (when && plan.maxWhen > 0) {
       ctx.font = fontMain(plan.fs2, 400);
       const t = wrapText(ctx, when, plan.maxWhen, 1)[0] || '';
-      if (packArt) {
+      if (packBg) {
         const tw = ctx.measureText(t).width;
         ctx.fillStyle = `rgba(255,255,255,${PACK_SHOT.chip})`;
         roundRectPath(ctx, plan.textRight - tw - 8 * plan.s, plan.rowY - plan.fs2 * 0.7, tw + 16 * plan.s, plan.fs2 * 1.4, 6 * plan.s);
@@ -3353,7 +3354,7 @@
           ctx, plan.bx, plan.by, plan.bw, plan.bh, plan.radius,
           Math.max(3, Math.round(12 * plan.s)), Math.max(1, Math.round(2 * plan.s)), 'rgba(31,36,48,0.18)'
         );
-      } else if (packArt) {
+      } else if (packBg) {
         paintWhiteCard(
           ctx, plan.qx - 12 * plan.s, plan.qy - 12 * plan.s,
           plan.qrPx + 24 * plan.s, plan.qrPx + plan.hintGap + plan.lh3 + 20 * plan.s,
