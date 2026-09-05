@@ -1,0 +1,155 @@
+// 主题包（DLC）通用引擎：未来所有可下载主题包都走这套规则
+// 每个包在 PACKS 注册表里声明：{ id, name, desc, base, resolve, entry, imageUrl }，
+// 引擎统一负责：开关存储（pack_<id>）、manifest 缓存（pack_<id>_manifest，24h）、
+// 按 key 懒加载图片（内存 Map）、胜出包发布到 globalThis.__acThemePack 供 card.js 同步读取。
+// 优先级：注册表顺序（前面的包先命中）；未收录日期/断网/拉图失败 → 发布 null 回落默认背景。
+// 图片一律 crossOrigin='anonymous'（Pages 已下发 ACAO:*），保证 canvas 不被污染、toDataURL 可用。
+(() => {
+  const MANIFEST_TTL = 24 * 3600 * 1000; // manifest 每天最多拉一次（version 变化靠下次刷新生效）
+
+  // ---- 主题包注册表（新增包 = 加一个对象，引擎零改动）----
+  const PACKS = [
+    {
+      id: 'flower',
+      name: '花开有时',
+      desc: '每天一种花的国风水彩背景',
+      base: 'https://anycomment-flower-pack.pages.dev',
+      // manifest.days = { 'MMDD': { n: 花名, f: 文件名 } }；当天有收录返回 key，否则 null
+      resolve(manifest, date) {
+        const key = String(date.getMonth() + 1).padStart(2, '0') + String(date.getDate()).padStart(2, '0');
+        return manifest.days && manifest.days[key] ? key : null;
+      },
+      entry(manifest, key) {
+        const e = manifest.days && manifest.days[key];
+        return e ? { name: e.n, file: e.f, label: `${Number(key.slice(0, 2))}月${Number(key.slice(2))}日 · ${e.n}` } : null;
+      },
+      imageUrl(file) {
+        return this.base + '/flowers/' + file;
+      },
+    },
+  ];
+
+  const state = new Map(); // id -> { enabled, manifest, images: Map(key -> HTMLImageElement) }
+  for (const p of PACKS) state.set(p.id, { enabled: false, manifest: null, images: new Map() });
+
+  function dayKey(d = new Date()) {
+    return String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+  }
+
+  function loadImage(url) {
+    return new Promise((resolve, reject) => {
+      const i = new Image();
+      i.onload = () => resolve(i);
+      i.onerror = () => reject(new Error('theme pack image load fail'));
+      i.crossOrigin = 'anonymous';
+      i.src = url;
+    });
+  }
+
+  async function fetchManifest(pack, force = false) {
+    const st = state.get(pack.id);
+    const cacheKey = `pack_${pack.id}_manifest`;
+    const cached = await new Promise((r) =>
+      chrome.storage.local.get({ [cacheKey]: null }, (v) => r(v[cacheKey]))
+    );
+    if (!force && cached && Date.now() - cached.fetched_at < MANIFEST_TTL) return cached;
+    try {
+      const res = await fetch(pack.base + '/manifest.json', { cache: 'no-cache' });
+      if (res.ok) {
+        const m = await res.json();
+        const rec = { version: m.version, count: m.count, days: m.days, fetched_at: Date.now() };
+        chrome.storage.local.set({ [cacheKey]: rec });
+        return rec;
+      }
+    } catch (e) {
+      // 离线等场景回落上次缓存
+    }
+    return cached;
+  }
+
+  // 就绪的包按注册表顺序取第一个命中的：发布 { packId, key, name, img }；都不命中发布 null。
+  // 中途跨天按打开那天的图显示，下次导航自然换新，不为此加定时器。
+  async function publish() {
+    for (const pack of PACKS) {
+      const st = state.get(pack.id);
+      if (!st.enabled || !st.manifest) continue;
+      const key = pack.resolve(st.manifest, new Date());
+      if (!key) continue;
+      const e = pack.entry(st.manifest, key);
+      if (!e) continue;
+      let img = st.images.get(key);
+      if (!img) {
+        try {
+          img = await loadImage(pack.imageUrl(e.file));
+          st.images.set(key, img);
+        } catch (err) {
+          continue; // 拉图失败试下一个包，最后回落 null
+        }
+      }
+      globalThis.__acThemePack = { packId: pack.id, key, name: e.name, label: e.label || e.name, img };
+      return;
+    }
+    globalThis.__acThemePack = null;
+  }
+
+  async function refreshPack(pack) {
+    const st = state.get(pack.id);
+    if (!st.enabled) return;
+    st.manifest = await fetchManifest(pack);
+    await publish();
+  }
+
+  // 开关读取与变更监听：关掉立即重新发布（可能回落到后面的包或 null）
+  chrome.storage.local.get(
+    Object.fromEntries(PACKS.map((p) => [`pack_${p.id}`, false])),
+    (v) => {
+      for (const p of PACKS) {
+        state.get(p.id).enabled = v[`pack_${p.id}`] === true;
+        if (state.get(p.id).enabled) refreshPack(p);
+      }
+    }
+  );
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local') return;
+    for (const p of PACKS) {
+      const k = `pack_${p.id}`;
+      if (!changes[k]) continue;
+      state.get(p.id).enabled = changes[k].newValue === true;
+      if (state.get(p.id).enabled) refreshPack(p);
+      else publish();
+    }
+  });
+
+  // 设置页预览用接口
+  globalThis.__acThemePacks = {
+    packs: PACKS,
+    manifest: (id) => (state.get(id) || {}).manifest || null,
+    async ensure(id, force = false) {
+      const pack = PACKS.find((p) => p.id === id);
+      if (!pack) return null;
+      const st = state.get(id);
+      st.manifest = await fetchManifest(pack, force);
+      await publish();
+      return st.manifest;
+    },
+    // 按 key 取 { name, img }（含懒加载），供预览显式绘制
+    async entry(id, key) {
+      const pack = PACKS.find((p) => p.id === id);
+      const st = state.get(id);
+      if (!pack || !st) return null;
+      if (!st.manifest) await this.ensure(id);
+      const e = pack.entry(st.manifest, key);
+      if (!e) return null;
+      let img = st.images.get(key);
+      if (!img) {
+        try {
+          img = await loadImage(pack.imageUrl(e.file));
+          st.images.set(key, img);
+        } catch (err) {
+          return null;
+        }
+      }
+      return { name: e.name, label: e.label || e.name, img };
+    },
+  };
+})();

@@ -2914,21 +2914,33 @@
     return '';
   }
 
+  // 主题包图片 cover 裁剪：填满 dst 矩形（居中裁切）
+  function drawImageCover(ctx, img, x, y, w, h) {
+    const s = Math.max(w / img.naturalWidth, h / img.naturalHeight);
+    const iw = img.naturalWidth * s, ih = img.naturalHeight * s;
+    ctx.drawImage(img, x + (w - iw) / 2, y + (h - ih) / 2, iw, ih);
+  }
+
   // 用 Canvas 绘制金句卡片，返回 dataURL(2x)。
   // festive=false 关掉节日/节气背景；memorial 开启纪念日主题（优先于节日）；
   // themeId 指定主题名（设置页预览用，优先级最高）；
-  // defaultTheme 是无命中时的兜底风格名（card_default_theme 设置）
-  function drawShareCard({ text, title, site, url, festive = true, memorial = false, themeId = '', defaultTheme = '' }) {
-    const theme = themeId ? (THEME_LIST.find((t) => t.name === themeId) || null)
+  // defaultTheme 是无命中时的兜底风格名（card_default_theme 设置）；
+  // packArt 为主题包（DLC）背景：显式传 { name, label, img }（设置页预览）或不传走自动路径
+  // 读 themepacks.js 发布的 __acThemePack；优先级：显式 themeId > 主题包 > 节日/节气 > 默认。
+  function drawShareCard({ text, title, site, url, festive = true, memorial = false, themeId = '', defaultTheme = '', packArt }) {
+    const pack = packArt !== undefined ? packArt : (globalThis.__acThemePack || null);
+    const usePack = !!(pack && pack.img) && !themeId;
+    const theme = usePack ? null : (themeId ? (THEME_LIST.find((t) => t.name === themeId) || null)
       : (resolveDayTheme(new Date(), { festival: festive !== false, memorial: memorial === true })
-        || (defaultTheme ? THEME_LIST.find((t) => t.name === defaultTheme) || null : null));
+        || (defaultTheme ? THEME_LIST.find((t) => t.name === defaultTheme) || null : null)));
     const W = 720, PAD = 56, DPR = 2;
+    const PACK_PANEL_TOP = 420; // 主题包版式（A）：上半整块给主题图，半透明白面板从这里铺到卡底
     // 先用离屏 canvas 测量文字行数
     const meas = document.createElement('canvas').getContext('2d');
     meas.font = fontMain(30);
     const lines = wrapText(meas, text, W - PAD * 2, 10);
     const lineH = 48;
-    const quoteTop = 150;
+    const quoteTop = usePack ? PACK_PANEL_TOP + 120 : 150;
     const dividerY = quoteTop + lines.length * lineH + 4; // 出处区上方的分隔线
 
     // 二维码模块边长取整像素（半格会糊出灰边，手机识别率骤降），静默区 2 模块
@@ -2951,20 +2963,39 @@
     const ctx = canvas.getContext('2d');
     ctx.scale(DPR, DPR);
 
-    // 渐变底 + 装饰 + 白色圆角卡片（卡内再铺同款装饰的淡水印）
+    // 渐变底 + 装饰 + 白色圆角卡片（卡内再铺同款装饰的淡水印）；
+    // 主题包版式（A）改为：主题图 cover 铺满整卡 + 下部半透明白面板，无卡内水印/大图标
     const cx = 28, cy = 28, cw = W - 56, ch = H - 56, r = 20;
-    paintBackdrop(ctx, W, H, 1, theme);
-    paintWhiteCard(ctx, cx, cy, cw, ch, r, 24, 8);
-    paintCardAccent(ctx, theme, cx, cy, cw, ch, r, 1);
-    paintThemeIcon(ctx, theme, W, H, 1);
+    if (usePack) {
+      drawImageCover(ctx, pack.img, 0, 0, W, H);
+      ctx.save();
+      ctx.fillStyle = 'rgba(255,255,255,0.93)';
+      ctx.shadowColor = 'rgba(31,36,48,0.12)';
+      ctx.shadowBlur = 24;
+      ctx.shadowOffsetY = 8;
+      roundRectPath(ctx, cx, PACK_PANEL_TOP, cw, H - 28 - PACK_PANEL_TOP, r);
+      ctx.fill();
+      ctx.restore();
+    } else {
+      paintBackdrop(ctx, W, H, 1, theme);
+      paintWhiteCard(ctx, cx, cy, cw, ch, r, 24, 8);
+      paintCardAccent(ctx, theme, cx, cy, cw, ch, r, 1);
+      paintThemeIcon(ctx, theme, W, H, 1);
+    }
 
-    // 顶部品牌条：蓝点 + AnyComment 划线分享
+    // 顶部品牌条：蓝点 + AnyComment 划线分享（主题包版式落在面板顶部，右侧加日期·条目名）
+    const brandY = usePack ? PACK_PANEL_TOP + 44 : cy + 44;
     ctx.fillStyle = '#2f6bff';
-    ctx.beginPath(); ctx.arc(cx + 30, cy + 44, 7, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(cx + 30, brandY, 7, 0, Math.PI * 2); ctx.fill();
     ctx.font = fontMain(15, 500);
     ctx.fillStyle = '#8a90a5';
     ctx.textBaseline = 'middle';
-    ctx.fillText('AnyComment · 划线分享', cx + 46, cy + 45);
+    ctx.fillText('AnyComment · 划线分享', cx + 46, brandY + 1);
+    if (usePack) {
+      ctx.textAlign = 'right';
+      ctx.fillText(pack.label || pack.name, W - PAD, brandY + 1);
+      ctx.textAlign = 'left';
+    }
 
     // 大引号
     ctx.font = `700 64px Georgia, "Times New Roman", serif`;
