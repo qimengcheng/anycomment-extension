@@ -73,6 +73,29 @@
     chrome.tabs.create({ url: 'chrome://extensions/shortcuts' });
   });
 
+  // 恢复默认设置：两段式确认（3 秒内再点一次才执行），不用原生 confirm
+  let resetTimer = null;
+  $('resetDefaults').addEventListener('click', () => {
+    const btn = $('resetDefaults');
+    if (!btn.classList.contains('danger')) {
+      btn.classList.add('danger');
+      btn.textContent = '再点一次确认恢复默认';
+      clearTimeout(resetTimer);
+      resetTimer = setTimeout(() => {
+        btn.classList.remove('danger');
+        btn.textContent = '恢复默认设置';
+      }, 3000);
+      return;
+    }
+    clearTimeout(resetTimer);
+    btn.classList.remove('danger');
+    btn.textContent = '恢复默认设置';
+    const patch = { ...card.SHOT_DEFAULTS, ...Object.fromEntries(packs.map((p) => [`pack_${p.id}`, false])) };
+    previewTheme = '';
+    themePick.set('');
+    save(patch);
+  });
+
   const LABELS = {
     'capture-selection': '框选区域截图',
     'capture-viewport': '截取当前屏幕区域',

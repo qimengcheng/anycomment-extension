@@ -58,6 +58,7 @@
     button { font: inherit; padding: 7px 14px; border-radius: 8px; border: 1px solid #dfe3ee; background: #fff; cursor: pointer; }
     button.primary { background: #4f6ef7; border-color: #4f6ef7; color: #fff; }
     button:hover { opacity: .92; }
+    button.danger { border-color: #e5484d; color: #e5484d; font-weight: 600; }
     .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
     .note { color: #8a90a5; font-size: 12px; line-height: 1.6; margin: 10px 0 0; }
     .preview img { width: 100%; border: 1px solid #e6e9f2; border-radius: 8px; display: block; }
@@ -136,6 +137,14 @@
               <option value="fullpage">完整页面</option>
             </select>
           </div>
+        </div>
+
+        <div class="card">
+          <h2>恢复默认</h2>
+          <div class="actions">
+            <button id="resetDefaults">恢复默认设置</button>
+          </div>
+          <p class="note">将截图选项、节日/节气/纪念日背景、主题包开关与默认背景风格全部恢复为默认值（主题包的清单缓存不受影响）。为防误触，需要连点两次确认。</p>
         </div>
 
         <div class="card">
