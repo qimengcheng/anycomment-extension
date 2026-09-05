@@ -3237,24 +3237,39 @@
     const ctx = canvas.getContext('2d');
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     if (packArt) {
-      // 主题包图案作背景：平均色铺底 + 海报等比顶端对齐完整显示（与金句卡片 A 版式同规则）
-      ctx.fillStyle = imageAvgColor(packArt.img);
+      // 黑白滤镜满铺底图 + 轻微提亮：作为若隐若现的纹理背景（用户口径：不加宽边框，
+      // 改变截图透明度让图案透出来）
+      ctx.save();
+      ctx.filter = 'grayscale(1)';
+      const bs = Math.max(plan.outW / packArt.img.naturalWidth, plan.outH / packArt.img.naturalHeight);
+      const biw = packArt.img.naturalWidth * bs, bih = packArt.img.naturalHeight * bs;
+      ctx.drawImage(packArt.img, (plan.outW - biw) / 2, (plan.outH - bih) / 2, biw, bih);
+      ctx.restore();
+      ctx.fillStyle = 'rgba(255,255,255,0.45)';
       ctx.fillRect(0, 0, plan.outW, plan.outH);
-      const ps = Math.min(plan.outW / packArt.img.naturalWidth, plan.outH / packArt.img.naturalHeight);
-      const piw = packArt.img.naturalWidth * ps, pih = packArt.img.naturalHeight * ps;
-      ctx.drawImage(packArt.img, (plan.outW - piw) / 2, 0, piw, pih);
+      // 半透明白卡：图案隐约透出
+      ctx.save();
+      ctx.fillStyle = 'rgba(255,255,255,0.75)';
+      ctx.shadowColor = 'rgba(31,36,48,0.10)';
+      ctx.shadowBlur = Math.max(6, Math.round(24 * plan.s));
+      ctx.shadowOffsetY = Math.max(2, Math.round(8 * plan.s));
+      roundRectPath(ctx, plan.cardX, plan.cardY, plan.cardW, plan.cardH, plan.radius);
+      ctx.fill();
+      ctx.restore();
     } else {
       paintBackdrop(ctx, plan.outW, plan.outH, plan.s, theme);
+      paintWhiteCard(
+        ctx, plan.cardX, plan.cardY, plan.cardW, plan.cardH, plan.radius,
+        Math.max(6, Math.round(24 * plan.s)), Math.max(2, Math.round(8 * plan.s))
+      );
     }
-    paintWhiteCard(
-      ctx, plan.cardX, plan.cardY, plan.cardW, plan.cardH, plan.radius,
-      Math.max(6, Math.round(24 * plan.s)), Math.max(2, Math.round(8 * plan.s))
-    );
     paintCardAccent(ctx, theme, plan.cardX, plan.cardY, plan.cardW, plan.cardH, plan.radius, plan.s);
     paintThemeIcon(ctx, theme, plan.outW, plan.outH, plan.s);
 
-    // 截图裁成圆角贴在白卡上，再描一圈淡边，免得浅色画面与白卡糊成一片
+    // 截图裁成圆角贴在白卡上，再描一圈淡边，免得浅色画面与白卡糊成一片；
+    // 主题包模式下截图半透明（0.85），让黑白纹理背景隐约透出
     ctx.save();
+    ctx.globalAlpha = packArt ? 0.85 : 1;
     roundRectPath(ctx, plan.imgX, plan.imgY, W, H, plan.imgRadius);
     ctx.clip();
     ctx.drawImage(img, plan.imgX, plan.imgY, W, H);
