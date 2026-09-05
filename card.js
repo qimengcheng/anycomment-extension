@@ -11,7 +11,8 @@
     shot_default_mode: 'viewport', // selection | viewport | fullpage
     card_festival_bg: true, // 节日/节气主题背景，划线分享卡片与截图共用
     card_memorial_bg: false, // 纪念日主题背景（七七、九一八、国家公祭日等严肃主题），默认关闭
-    card_default_theme: '', // 当天无命中时的兜底风格：''=默认蓝渐变，或节日主题名（关掉节日开关时它就是常驻风格）
+    card_default_theme: '', // 当天无命中时的兜底风格：''=默认蓝渐变，或节日主题名/pack_<id>:<key> 主题包条目（关掉节日开关时它就是常驻风格）
+    card_pack_shot_bg: false, // 截图分享合成也使用主题包图案作背景（开启且当天命中时生效）
   };
 
   const fontMain = (size, weight = 600) => `${weight} ${size}px "PingFang SC", "Microsoft YaHei", system-ui, sans-serif`;
@@ -3201,7 +3202,21 @@
     const theme = o.theme_id ? (THEME_LIST.find((t) => t.name === o.theme_id) || null)
       : (resolveDayTheme(new Date(time), { festival: o.card_festival_bg !== false, memorial: o.card_memorial_bg === true })
         || (o.card_default_theme ? THEME_LIST.find((t) => t.name === o.card_default_theme) || null : null));
-    if (!qr && !brand && !when && !theme) return dataUrl;
+    // 主题包图案背景（card_pack_shot_bg 开启时生效）：当日命中的包图替代渐变外框，
+    // 优先级与金句卡片一致：显式 theme_id > 主题包 > 节日/节气 > 默认风格
+    let packArt = null;
+    if (o.card_pack_shot_bg === true && !o.theme_id) {
+      const dayPack = globalThis.__acThemePack || null;
+      if (dayPack && dayPack.img) {
+        packArt = dayPack;
+      } else if (o.card_default_theme && o.card_default_theme.startsWith('pack_') && globalThis.__acThemePacks) {
+        // 默认风格指向包条目时作为兜底（entrySync 带开关守卫，包关闭即 null）
+        const ci = o.card_default_theme.indexOf(':');
+        const d = globalThis.__acThemePacks.entrySync(o.card_default_theme.slice(5, ci), o.card_default_theme.slice(ci + 1));
+        if (d && d.img) packArt = d;
+      }
+    }
+    if (!qr && !brand && !when && !theme && !packArt) return dataUrl;
 
     const overlay = o.shot_qr_overlay === true;
     const corner = ['tl', 'tr', 'bl', 'br'].includes(o.shot_qr_corner) ? o.shot_qr_corner : 'br';
@@ -3221,7 +3236,16 @@
     canvas.height = plan.outH;
     const ctx = canvas.getContext('2d');
     ctx.setTransform(1, 0, 0, 1, 0, 0);
-    paintBackdrop(ctx, plan.outW, plan.outH, plan.s, theme);
+    if (packArt) {
+      // 主题包图案作背景：平均色铺底 + 海报等比顶端对齐完整显示（与金句卡片 A 版式同规则）
+      ctx.fillStyle = imageAvgColor(packArt.img);
+      ctx.fillRect(0, 0, plan.outW, plan.outH);
+      const ps = Math.min(plan.outW / packArt.img.naturalWidth, plan.outH / packArt.img.naturalHeight);
+      const piw = packArt.img.naturalWidth * ps, pih = packArt.img.naturalHeight * ps;
+      ctx.drawImage(packArt.img, (plan.outW - piw) / 2, 0, piw, pih);
+    } else {
+      paintBackdrop(ctx, plan.outW, plan.outH, plan.s, theme);
+    }
     paintWhiteCard(
       ctx, plan.cardX, plan.cardY, plan.cardW, plan.cardH, plan.radius,
       Math.max(6, Math.round(24 * plan.s)), Math.max(2, Math.round(8 * plan.s))
