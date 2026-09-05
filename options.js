@@ -49,6 +49,7 @@
     if (corner) corner.checked = true;
     $('shot_default_mode').value = cfg.shot_default_mode;
     themePick.refresh(autoLabel());
+    defaultPick.set(cfg.card_default_theme || ''); // 存储回显：不能只靠 buildPickers 的内部值
     defaultPick.refresh('默认蓝渐变');
     updatePackStatuses();
     drawPreview();
@@ -170,6 +171,8 @@
     return {
       setOptions(g) { groups = g; labels = new Map(); for (const gr of g) for (const it of gr.items) labels.set(it.value, it.label); lbl.textContent = labels.get(value) || fallback; },
       refresh(fb) { fallback = fb || ''; if (!labels.has(value)) lbl.textContent = labels.get(value) || fallback; },
+      // 从存储回显（buildPickers 完成前 labels 可能还没这一项，先显示原始值，清单到位后 refresh 修正）
+      set(v) { value = v || ''; lbl.textContent = labels.has(value) ? labels.get(value) : (value || fallback); },
       get value() { return value; },
     };
   }
