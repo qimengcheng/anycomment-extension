@@ -166,6 +166,9 @@
       openPicker = close;
       search.focus();
       renderList('');
+      // 展开时定位到当前选中项（列表长达数百项，落在最前面要翻很久）
+      const sel = list.querySelector('.pk-item.sel');
+      if (sel) sel.scrollIntoView({ block: 'center' });
     }
     btn.addEventListener('click', () => (panel ? close() : open()));
     let groups = [];
