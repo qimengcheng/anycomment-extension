@@ -30,6 +30,7 @@
     $('shot_qr').checked = !!cfg.shot_qr;
     $('shot_time').checked = !!cfg.shot_time;
     $('shot_brand').checked = !!cfg.shot_brand;
+    $('card_festival_bg').checked = cfg.card_festival_bg !== false;
     $(cfg.shot_qr_overlay ? 'pos_overlay' : 'pos_strip').checked = true;
     $('cornerBox').classList.toggle('off', !cfg.shot_qr_overlay || !cfg.shot_qr);
     const corner = document.querySelector(`input[name="corner"][value="${cfg.shot_qr_corner}"]`);
@@ -41,6 +42,7 @@
   $('shot_qr').addEventListener('change', (e) => save({ shot_qr: e.target.checked }));
   $('shot_time').addEventListener('change', (e) => save({ shot_time: e.target.checked }));
   $('shot_brand').addEventListener('change', (e) => save({ shot_brand: e.target.checked }));
+  $('card_festival_bg').addEventListener('change', (e) => save({ card_festival_bg: e.target.checked }));
   $('pos_overlay').addEventListener('change', () => save({ shot_qr_overlay: true }));
   $('pos_strip').addEventListener('change', () => save({ shot_qr_overlay: false }));
   document.querySelectorAll('input[name="corner"]').forEach((r) => {
@@ -67,6 +69,18 @@
 
   // ========== 实时预览：造一张示例网页图，按当前设置走真实的合成函数 ==========
   let sample = null;
+  // 主题预览选择：仅本页临时生效，不写入 storage
+  let previewTheme = '';
+
+  // 预览选择器：按今天实际命中的主题做默认说明，节日在前、节气在后分组
+  (() => {
+    const today = card.resolveTheme(new Date());
+    const sel = $('theme_pick');
+    sel.innerHTML = `<option value="">按今天日期（${today ? today.name : '无，默认背景'}）</option>`
+      + `<optgroup label="节日">${card.THEME_LIST.filter((t) => !t.isTerm).map((t) => `<option value="${t.name}">${t.name}</option>`).join('')}</optgroup>`
+      + `<optgroup label="二十四节气">${card.THEME_LIST.filter((t) => t.isTerm).map((t) => `<option value="${t.name}">${t.name}</option>`).join('')}</optgroup>`;
+    sel.addEventListener('change', () => { previewTheme = sel.value; drawPreview(); });
+  })();
 
   function makeSample() {
     const c = document.createElement('canvas');
@@ -103,7 +117,9 @@
     if (!sample) sample = makeSample();
     const img = await loadImage(sample);
     try {
-      const url = card.composeScreenshot({ img, dataUrl: sample, url: SAMPLE_URL, time: Date.now(), opts: cfg });
+      const opts = { ...cfg };
+      if (previewTheme) opts.theme_id = previewTheme;
+      const url = card.composeScreenshot({ img, dataUrl: sample, url: SAMPLE_URL, time: Date.now(), opts });
       const el = $('previewImg');
       el.src = url;
       el.style.display = '';
