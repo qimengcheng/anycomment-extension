@@ -91,8 +91,22 @@
     }
     try {
       const raw = 'data:image/png;base64,' + shot.res.data;
-      const dataUrl = card.composeScreenshot({ img: shot.img, dataUrl: raw, url: pageUrl(), time: Date.now(), opts: cfg });
-      card.showPreview(shadow, dataUrl, { alt: '网页截图', fileName: `anycomment-shot-${Date.now()}.png` });
+      const shotTime = Date.now();
+      const dataUrl = card.composeScreenshot({ img: shot.img, dataUrl: raw, url: pageUrl(), time: shotTime, opts: cfg });
+      card.showPreview(shadow, dataUrl, {
+        alt: '网页截图',
+        fileName: `anycomment-shot-${Date.now()}.png`,
+        // 主题包背景快捷开关：不关弹窗即时重合成，并写入 storage 与设置页保持同步
+        actions: [{
+          label: cfg.card_pack_shot_bg === true ? '背景图案：开' : '背景图案：关',
+          onClick: async (updateImg) => {
+            cfg.card_pack_shot_bg = !(cfg.card_pack_shot_bg === true);
+            chrome.storage.local.set({ card_pack_shot_bg: cfg.card_pack_shot_bg });
+            updateImg(card.composeScreenshot({ img: shot.img, dataUrl: raw, url: pageUrl(), time: shotTime, opts: cfg }));
+            return cfg.card_pack_shot_bg ? '背景图案：开' : '背景图案：关';
+          },
+        }],
+      });
     } catch (e) {
       toast('生成截图卡片失败');
     }

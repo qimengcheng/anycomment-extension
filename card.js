@@ -3237,25 +3237,17 @@
     const ctx = canvas.getContext('2d');
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     if (packArt) {
-      // 黑白滤镜满铺底图 + 轻微提亮：作为若隐若现的纹理背景（用户口径：不加宽边框，
-      // 改变截图透明度让图案透出来）
+      // 背景去色 90%（saturate 0.1）满铺，截图以正片叠底（multiply）贴上：
+      // 截图浅色区域透出去色花纹，深色内容保持——不透明、无空洞
       ctx.save();
-      ctx.filter = 'grayscale(1)';
+      ctx.filter = 'saturate(0.1)';
       const bs = Math.max(plan.outW / packArt.img.naturalWidth, plan.outH / packArt.img.naturalHeight);
       const biw = packArt.img.naturalWidth * bs, bih = packArt.img.naturalHeight * bs;
       ctx.drawImage(packArt.img, (plan.outW - biw) / 2, (plan.outH - bih) / 2, biw, bih);
       ctx.restore();
-      ctx.fillStyle = 'rgba(255,255,255,0.45)';
+      // 提亮 80%（调参器 lighten=80）
+      ctx.fillStyle = 'rgba(255,255,255,0.8)';
       ctx.fillRect(0, 0, plan.outW, plan.outH);
-      // 半透明白卡：图案隐约透出
-      ctx.save();
-      ctx.fillStyle = 'rgba(255,255,255,0.75)';
-      ctx.shadowColor = 'rgba(31,36,48,0.10)';
-      ctx.shadowBlur = Math.max(6, Math.round(24 * plan.s));
-      ctx.shadowOffsetY = Math.max(2, Math.round(8 * plan.s));
-      roundRectPath(ctx, plan.cardX, plan.cardY, plan.cardW, plan.cardH, plan.radius);
-      ctx.fill();
-      ctx.restore();
     } else {
       paintBackdrop(ctx, plan.outW, plan.outH, plan.s, theme);
       paintWhiteCard(
@@ -3266,10 +3258,14 @@
     paintCardAccent(ctx, theme, plan.cardX, plan.cardY, plan.cardW, plan.cardH, plan.radius, plan.s);
     paintThemeIcon(ctx, theme, plan.outW, plan.outH, plan.s);
 
-    // 截图裁成圆角贴在白卡上，再描一圈淡边，免得浅色画面与白卡糊成一片；
-    // 主题包模式下截图半透明（0.85），让黑白纹理背景隐约透出
+    // 截图裁成圆角贴上，再描一圈淡边；主题包模式下先垫白 70% 再正片叠底（调参器 underlay=70）
     ctx.save();
-    ctx.globalAlpha = packArt ? 0.85 : 1;
+    if (packArt) {
+      ctx.fillStyle = 'rgba(255,255,255,0.7)';
+      roundRectPath(ctx, plan.imgX, plan.imgY, W, H, plan.imgRadius);
+      ctx.fill();
+      ctx.globalCompositeOperation = 'multiply';
+    }
     roundRectPath(ctx, plan.imgX, plan.imgY, W, H, plan.imgRadius);
     ctx.clip();
     ctx.drawImage(img, plan.imgX, plan.imgY, W, H);
@@ -3279,9 +3275,17 @@
     roundRectPath(ctx, plan.imgX, plan.imgY, W, H, plan.imgRadius);
     ctx.stroke();
 
-    // 顶部留白：蓝点 + 品牌靠左，拍摄时间靠右，同一行两端对齐
+    // 顶部留白：蓝点 + 品牌靠左，拍摄时间靠右，同一行两端对齐；
+    // 主题包模式背景是去色花纹，文字下垫白色圆角小底保证可读
     ctx.textBaseline = 'middle';
     if (brand) {
+      if (packArt) {
+        ctx.font = fontMain(plan.fs1, 600);
+        const bw = ctx.measureText(wrapText(ctx, brand, plan.maxBrand, 1)[0] || '').width;
+        ctx.fillStyle = 'rgba(255,255,255,0.9)';
+        roundRectPath(ctx, plan.textCx - 8 * plan.s, plan.rowY - plan.lh1 / 2, plan.dotW + bw + 16 * plan.s, plan.lh1, 6 * plan.s);
+        ctx.fill();
+      }
       ctx.fillStyle = '#2f6bff';
       ctx.beginPath();
       ctx.arc(plan.textCx + plan.dotR, plan.rowY, plan.dotR, 0, Math.PI * 2);
@@ -3292,17 +3296,30 @@
     }
     if (when && plan.maxWhen > 0) {
       ctx.font = fontMain(plan.fs2, 400);
-      ctx.fillStyle = '#8a90a5';
       const t = wrapText(ctx, when, plan.maxWhen, 1)[0] || '';
+      if (packArt) {
+        const tw = ctx.measureText(t).width;
+        ctx.fillStyle = 'rgba(255,255,255,0.9)';
+        roundRectPath(ctx, plan.textRight - tw - 8 * plan.s, plan.rowY - plan.fs2 * 0.7, tw + 16 * plan.s, plan.fs2 * 1.4, 6 * plan.s);
+        ctx.fill();
+      }
+      ctx.fillStyle = '#8a90a5';
       ctx.fillText(t, plan.textRight - ctx.measureText(t).width, plan.rowY);
     }
 
-    // 二维码：整像素模块 + 下方提示文字。底就是白卡/白底板，不必再垫白底
+    // 二维码：整像素模块 + 下方提示文字。普通模式底就是白卡；主题包模式垫白色圆角底保证扫码
     if (qr && plan.cell > 0) {
       if (plan.mode === 'overlay') {
         paintWhiteCard(
           ctx, plan.bx, plan.by, plan.bw, plan.bh, plan.radius,
           Math.max(3, Math.round(12 * plan.s)), Math.max(1, Math.round(2 * plan.s)), 'rgba(31,36,48,0.18)'
+        );
+      } else if (packArt) {
+        paintWhiteCard(
+          ctx, plan.qx - 12 * plan.s, plan.qy - 12 * plan.s,
+          plan.qrPx + 24 * plan.s, plan.qrPx + plan.hintGap + plan.lh3 + 20 * plan.s,
+          Math.max(4, Math.round(10 * plan.s)),
+          Math.max(3, Math.round(10 * plan.s)), Math.max(1, Math.round(3 * plan.s))
         );
       }
       drawQrModules(ctx, qr, plan.qx, plan.qy, plan.cell, QR_QUIET);
@@ -3372,6 +3389,9 @@
     img.className = 'ac-share-img';
     img.src = dataUrl;
     img.alt = opts.alt || '分享卡片预览';
+    // 图片可被扩展操作替换（如截图主题包背景快捷开关重合成），复制/下载始终取当前图
+    let curUrl = dataUrl;
+    const updateImg = (u) => { curUrl = u; img.src = u; };
     const acts = document.createElement('div');
     acts.className = 'ac-share-actions';
     const btnDl = document.createElement('button');
@@ -3379,7 +3399,7 @@
     btnDl.textContent = '下载图片';
     btnDl.addEventListener('click', () => {
       const a = document.createElement('a');
-      a.href = dataUrl;
+      a.href = curUrl;
       a.download = opts.fileName || `anycomment-quote-${Date.now()}.png`;
       a.click();
     });
@@ -3394,7 +3414,7 @@
     );
     btnCopy.addEventListener('click', async () => {
       try {
-        await copyImageToClipboard(dataUrl);
+        await copyImageToClipboard(curUrl);
         btnCopy.textContent = '已复制 ✓';
       } catch {
         btnCopy.textContent = '复制失败，请下载';
@@ -3411,6 +3431,19 @@
       window.removeEventListener('keydown', onKey, true);
     }
     btnClose.addEventListener('click', close);
+    // 扩展操作按钮（如截图的主题包背景快捷开关）：onClick(updateImg) 返回字符串则更新按钮文案
+    for (const act of opts.actions || []) {
+      const b = document.createElement('button');
+      b.className = 'ac-share-btn ac-share-ghost';
+      b.textContent = act.label;
+      b.addEventListener('click', async () => {
+        try {
+          const nl = await act.onClick(updateImg);
+          if (typeof nl === 'string') b.textContent = nl;
+        } catch (e) { /* 失败保持原文案 */ }
+      });
+      acts.append(b);
+    }
     acts.append(btnDl, btnCopy, btnClose);
     box.append(img, acts);
     mask.append(box);
