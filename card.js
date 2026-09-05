@@ -255,7 +255,7 @@
   }
 
   // 公历节日（'月,日' -> 主题 id）；母亲节=5月第二个周日，在 resolveTheme 里现算
-  const SOLAR_FEST = { '1,1': 'newyear', '2,14': 'valentine', '3,8': 'women', '5,1': 'labor', '5,4': 'youth', '6,1': 'children', '9,10': 'teacher', '10,1': 'national', '12,24': 'christmas', '12,25': 'christmas' };
+  const SOLAR_FEST = { '1,1': 'newyear', '2,14': 'valentine', '3,8': 'women', '5,1': 'labor', '5,4': 'youth', '6,1': 'children', '9,10': 'teacher', '10,1': 'national', '12,24': 'christmaseve', '12,25': 'christmas' };
   // 农历节日（'月,日' -> 主题 id）；除夕单独判「腊月最后一天」
   const LUNAR_FEST = { '1,1': 'spring', '1,15': 'lantern', '5,5': 'dragonboat', '7,7': 'qixi', '8,15': 'midautumn', '9,9': 'double9', '12,8': 'laba' };
 
@@ -444,6 +444,40 @@
     }
     ctx.restore();
   }
+  // 圣诞帽：(x,y) 为帽底中心，w 宽 h 高，rot 旋转；红帽身 + 白绒帽边 + 右垂帽尖绒球
+  function santaHat(ctx, x, y, w, h, rot = 0) {
+    ctx.save();
+    ctx.translate(x, y); ctx.rotate(rot);
+    const bandH = Math.max(2, w * 0.22);
+    ctx.fillStyle = '#d84a45';
+    ctx.beginPath();
+    ctx.moveTo(-w * 0.4, -bandH);
+    ctx.quadraticCurveTo(-w * 0.48, -h * 0.72, w * 0.08, -h);
+    ctx.quadraticCurveTo(w * 0.3, -h * 0.86, w * 0.38, -h * 0.55);
+    ctx.quadraticCurveTo(w * 0.46, -h * 0.3, w * 0.42, -bandH);
+    ctx.closePath();
+    ctx.fill();
+    ctx.fillStyle = '#ffffff';
+    roundRectPath(ctx, -w * 0.55, -bandH / 2, w * 1.05, bandH, bandH / 2);
+    ctx.fill();
+    ctx.beginPath(); ctx.arc(w * 0.4, -h * 0.55, w * 0.14, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  // 苹果（平安果）：双圆果身带顶凹 + 高光 + 果柄绿叶
+  function apple(ctx, x, y, r, body = '#d64545') {
+    ctx.save();
+    ctx.fillStyle = body;
+    ctx.beginPath();
+    ctx.arc(x - r * 0.36, y + r * 0.08, r * 0.76, 0, Math.PI * 2);
+    ctx.arc(x + r * 0.36, y + r * 0.08, r * 0.76, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.beginPath(); ctx.ellipse(x - r * 0.3, y - r * 0.12, r * 0.16, r * 0.26, -0.5, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = '#8a5a3d'; ctx.lineWidth = Math.max(1, r * 0.13); ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x, y - r * 0.55); ctx.quadraticCurveTo(x + r * 0.1, y - r * 0.95, x + r * 0.3, y - r * 1.1); ctx.stroke();
+    leaf(ctx, x + r * 0.5, y - r * 0.9, r * 0.62, -0.7, '#4a9e5a');
+    ctx.restore();
+  }
 
   // ----- 二十四节气主题：每个节气独立渐变配色 + 当季装饰（种子取节气下标，重绘稳定）-----
   // kind: plum 小寒大寒梅花 | sprout 嫩芽 | rain 雨丝 | petal 春花瓣 | qingming 清明雨柳
@@ -568,6 +602,18 @@
         lantern(ctx, x0 + w - b * 0.03, y0 + b * 0.055, b * 0.055, b * 0.066);
         lantern(ctx, x0 + b * 0.09, y0 + h - b * 0.11, b * 0.07, b * 0.084);
         cornerScatter(ctx, x0, y0, w, h, 10, 7, (c, x, y, rng) => star4(c, x, y, b * (0.005 + rng() * 0.007), 'rgba(255,217,138,0.9)'));
+      },
+    },
+    chuxi: {
+      name: '除夕', when: { chuxi: true }, grad: ['#8f1414', '#c9432c'],
+      deco(ctx, x0, y0, w, h, s) {
+        const b = Math.min(w, h) * s;
+        // 守岁烟花为主，配一只灯笼，与春节的灯笼阵区分
+        firework(ctx, x0 + w - b * 0.11, y0 + b * 0.12, b * 0.055, 'rgba(255,217,138,0.95)');
+        firework(ctx, x0 + b * 0.1, y0 + h - b * 0.1, b * 0.042, 'rgba(255,217,138,0.7)');
+        firework(ctx, x0 + w - b * 0.05, y0 + b * 0.24, b * 0.03, 'rgba(255,180,120,0.6)');
+        lantern(ctx, x0 + b * 0.08, y0 + h - b * 0.14, b * 0.065, b * 0.078);
+        cornerScatter(ctx, x0, y0, w, h, 8, 8, (c, x, y, rng) => star4(c, x, y, b * (0.005 + rng() * 0.007), 'rgba(255,217,138,0.9)'));
       },
     },
     lantern: {
@@ -727,20 +773,30 @@
         star4(ctx, x0 + w - b * 0.08, y0 + b * 0.08, b * 0.008, 'rgba(255,235,200,0.9)');
       },
     },
+    christmaseve: {
+      name: '平安夜', when: { solar: [12, 24] }, grad: ['#2b4a7a', '#7a9fd0'],
+      deco(ctx, x0, y0, w, h, s) {
+        const b = Math.min(w, h) * s;
+        // 平安果（苹果）为主，配雪花与星光
+        apple(ctx, x0 + w - b * 0.09, y0 + b * 0.1, b * 0.034);
+        apple(ctx, x0 + b * 0.08, y0 + h - b * 0.09, b * 0.028, '#e05a50');
+        cornerScatter(ctx, x0, y0, w, h, 7, 29, (c, x, y, rng) => flake(c, x, y, b * (0.012 + rng() * 0.013), 'rgba(255,255,255,0.8)'));
+        cornerScatter(ctx, x0, y0, w, h, 5, 30, (c, x, y, rng) => star4(c, x, y, b * (0.005 + rng() * 0.006), 'rgba(255,235,190,0.9)'));
+      },
+    },
     christmas: {
       name: '圣诞节', when: { solar: [12, 25] }, grad: ['#2f6e5a', '#8fc9b0'],
       deco(ctx, x0, y0, w, h, s) {
         const b = Math.min(w, h) * s;
+        santaHat(ctx, x0 + w - b * 0.065, y0 + b * 0.065, b * 0.12, b * 0.12, -0.85); // 右上角挂一顶圣诞帽
         cornerScatter(ctx, x0, y0, w, h, 8, 28, (c, x, y, rng) => flake(c, x, y, b * (0.012 + rng() * 0.014), 'rgba(255,255,255,0.85)'));
-        // 冬青果：两颗红果 + 小叶
-        for (const [hx, hy] of [[x0 + w - b * 0.08, y0 + b * 0.09], [x0 + b * 0.08, y0 + h - b * 0.08]]) {
-          leaf(ctx, hx, hy, b * 0.035, -1.8, 'rgba(30,90,60,0.8)');
-          leaf(ctx, hx, hy, b * 0.035, 1.2, 'rgba(30,90,60,0.8)');
-          ctx.save(); ctx.fillStyle = '#d64545';
-          ctx.beginPath(); ctx.arc(hx - b * 0.008, hy + b * 0.008, b * 0.01, 0, Math.PI * 2); ctx.fill();
-          ctx.beginPath(); ctx.arc(hx + b * 0.008, hy + b * 0.004, b * 0.01, 0, Math.PI * 2); ctx.fill();
-          ctx.restore();
-        }
+        // 冬青果：两颗红果 + 小叶（左下）
+        leaf(ctx, x0 + b * 0.08, y0 + h - b * 0.08, b * 0.035, -1.8, 'rgba(30,90,60,0.8)');
+        leaf(ctx, x0 + b * 0.08, y0 + h - b * 0.08, b * 0.035, 1.2, 'rgba(30,90,60,0.8)');
+        ctx.save(); ctx.fillStyle = '#d64545';
+        ctx.beginPath(); ctx.arc(x0 + b * 0.072, y0 + h - b * 0.072, b * 0.01, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(x0 + b * 0.088, y0 + h - b * 0.076, b * 0.01, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
       },
     },
   };
@@ -753,7 +809,7 @@
     if (fest) return THEMES[fest];
     const lun = solarToLunar(y, m, d);
     if (lun) {
-      if (!lun.isLeap && lun.month === 12 && lun.day === lunarMonthDays(lun.year, 12)) return THEMES.spring; // 除夕
+      if (!lun.isLeap && lun.month === 12 && lun.day === lunarMonthDays(lun.year, 12)) return THEMES.chuxi; // 除夕
       if (!lun.isLeap) {
         const lf = LUNAR_FEST[`${lun.month},${lun.day}`];
         if (lf) return THEMES[lf];
@@ -796,30 +852,31 @@
   // 主题在指定公历年份的实际日期文案（'M月D日'，设置页选择器展示用）；无法计算返回 ''。
   // 农历节日的「当年日期」按公历年逐日扫描命中（腊八这类农历年末节日会落在次年初，
   // 用户口径是"今年过的那次"），结果按年缓存
-  const _lunarDatesCache = new Map(); // year -> Map('农历m,d' -> 'M月D日')
+  const _lunarDatesCache = new Map(); // year -> Map('农历m,d' 或 'chuxi' -> 'M月D日')
+  function lunarDatesInYear(year) {
+    let map = _lunarDatesCache.get(year);
+    if (map) return map;
+    map = new Map();
+    for (let day = 1; day <= 366; day++) {
+      const dt = new Date(year, 0, day);
+      if (dt.getFullYear() !== year) break;
+      const lun = solarToLunar(dt.getFullYear(), dt.getMonth() + 1, dt.getDate());
+      if (lun && !lun.isLeap) {
+        if (lun.month === 12 && lun.day === lunarMonthDays(lun.year, 12) && !map.has('chuxi')) map.set('chuxi', `${dt.getMonth() + 1}月${dt.getDate()}日`);
+        const key = `${lun.month},${lun.day}`;
+        if (!map.has(key)) map.set(key, `${dt.getMonth() + 1}月${dt.getDate()}日`);
+      }
+    }
+    _lunarDatesCache.set(year, map);
+    return map;
+  }
   function themeDateInYear(theme, year = new Date().getFullYear()) {
     const w = theme && theme.when;
     if (!w) return '';
     if (w.term != null) return `${Math.floor(w.term / 2) + 1}月${termDay(year, w.term)}日`;
     if (w.solar) return `${w.solar[0]}月${w.solar[1]}日`;
     if (w.mother) return `5月${1 + ((0 - new Date(year, 4, 1).getDay() + 7) % 7) + 7}日`; // 5月第二个周日
-    if (w.lunar) {
-      let map = _lunarDatesCache.get(year);
-      if (!map) {
-        map = new Map();
-        for (let day = 1; day <= 366; day++) {
-          const dt = new Date(year, 0, day);
-          if (dt.getFullYear() !== year) break;
-          const lun = solarToLunar(dt.getFullYear(), dt.getMonth() + 1, dt.getDate());
-          if (lun && !lun.isLeap) {
-            const key = `${lun.month},${lun.day}`;
-            if (!map.has(key)) map.set(key, `${dt.getMonth() + 1}月${dt.getDate()}日`);
-          }
-        }
-        _lunarDatesCache.set(year, map);
-      }
-      return map.get(`${w.lunar[0]},${w.lunar[1]}`) || '';
-    }
+    if (w.lunar || w.chuxi) return lunarDatesInYear(year).get(w.chuxi ? 'chuxi' : `${w.lunar[0]},${w.lunar[1]}`) || '';
     return '';
   }
 

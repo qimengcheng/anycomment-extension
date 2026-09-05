@@ -91,9 +91,10 @@
   }
   buildThemeOptions();
 
-  // 默认背景风格：默认蓝渐变 + 全部节日风格（当天无命中时生效；关掉节日开关时它就是常驻风格）
+  // 默认背景风格：默认蓝渐变 + 全部节日与节气风格（当天无命中时生效；关掉节日开关时它就是常驻风格）
   $('card_default_theme').innerHTML = `<option value="">默认蓝渐变</option>`
-    + card.THEME_LIST.filter((t) => !t.isTerm).map((t) => `<option value="${t.name}">${t.name}</option>`).join('');
+    + `<optgroup label="节日">${card.THEME_LIST.filter((t) => !t.isTerm).map((t) => `<option value="${t.name}">${t.name}</option>`).join('')}</optgroup>`
+    + `<optgroup label="二十四节气">${card.THEME_LIST.filter((t) => t.isTerm).map((t) => `<option value="${t.name}">${t.name}</option>`).join('')}</optgroup>`;
 
   function makeSample() {
     const c = document.createElement('canvas');
