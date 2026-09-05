@@ -16,11 +16,13 @@
       base: 'https://anycomment-flower-pack.pages.dev',
       // manifest.days = { 'MMDD': { n: 花名, f: 文件名 } }；当天有收录返回 key，否则 null
       resolve(manifest, date) {
+        if (!manifest || !manifest.days) return null;
         const key = String(date.getMonth() + 1).padStart(2, '0') + String(date.getDate()).padStart(2, '0');
-        return manifest.days && manifest.days[key] ? key : null;
+        return manifest.days[key] ? key : null;
       },
       entry(manifest, key) {
-        const e = manifest.days && manifest.days[key];
+        if (!manifest || !manifest.days) return null;
+        const e = manifest.days[key];
         return e ? { name: e.n, file: e.f, label: `${Number(key.slice(0, 2))}月${Number(key.slice(2))}日 · ${e.n}` } : null;
       },
       imageUrl(file) {
@@ -39,8 +41,9 @@
   function loadImage(url) {
     return new Promise((resolve, reject) => {
       const i = new Image();
-      i.onload = () => resolve(i);
-      i.onerror = () => reject(new Error('theme pack image load fail'));
+      const timer = setTimeout(() => reject(new Error('theme pack image timeout')), 15000);
+      i.onload = () => { clearTimeout(timer); resolve(i); };
+      i.onerror = () => { clearTimeout(timer); reject(new Error('theme pack image load fail')); };
       i.crossOrigin = 'anonymous';
       i.src = url;
     });
@@ -54,7 +57,8 @@
     );
     if (!force && cached && Date.now() - cached.fetched_at < MANIFEST_TTL) return cached;
     try {
-      const res = await fetch(pack.base + '/manifest.json', { cache: 'no-cache' });
+      // 8 秒超时：pages.dev 不可达时不能让 await 链挂死（预览/发布都依赖它返回）
+      const res = await fetch(pack.base + '/manifest.json', { cache: 'no-cache', signal: AbortSignal.timeout(8000) });
       if (res.ok) {
         const m = await res.json();
         const rec = { version: m.version, count: m.count, days: m.days, fetched_at: Date.now() };
@@ -168,6 +172,7 @@
       const st = state.get(id);
       if (!pack || !st) return null;
       if (!st.manifest) await this.ensure(id);
+      if (!st.manifest) return null; // 清单不可用（断网等）
       const e = pack.entry(st.manifest, key);
       if (!e) return null;
       let img = st.images.get(key);

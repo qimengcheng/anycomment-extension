@@ -305,15 +305,35 @@
     return c.toDataURL('image/png');
   }
 
+  // 预览渲染分两段：先立即按引擎当前缓存状态画（缓存冷时包背景暂回落默认蓝），
+  // 再后台预热默认风格指向的包图，热了重画一次——预热绝不能阻塞出图，
+  // 否则 pages.dev 网络慢时两张预览会一直挂空
+  let packWarmKey = ''; // 已完成预热的默认风格值
+  let drawing = false; // render 可能被高频触发，避免重入
   async function drawPreview() {
-    if (!sample) sample = makeSample();
-    const img = await loadImage(sample);
-    // 默认风格为主题包条目时先预热引擎缓存，defaultTheme 的同步解析才能命中
-    const defVal = cfg.card_default_theme || '';
-    if (defVal.startsWith('pack_') && globalThis.__acThemePacks) {
-      const i = defVal.indexOf(':');
-      try { await globalThis.__acThemePacks.entry(defVal.slice(5, i), defVal.slice(i + 1)); } catch (e) { /* 忽略 */ }
+    if (drawing) return;
+    drawing = true;
+    try {
+      if (!sample) sample = makeSample();
+      const img = await loadImage(sample);
+      await drawPreviewCards(img);
+      const defVal = cfg.card_default_theme || '';
+      if (defVal.startsWith('pack_') && packWarmKey !== defVal && globalThis.__acThemePacks) {
+        packWarmKey = defVal;
+        const i = defVal.indexOf(':');
+        // 后台预热默认风格的包图，不 await——网络挂起时不能卡住 drawing 标志；
+        // 热了重画一次（那时 drawShareCard 的 entrySync 才能命中包背景）
+        globalThis.__acThemePacks
+          .entry(defVal.slice(5, i), defVal.slice(i + 1))
+          .then(() => { if (cfg.card_default_theme === defVal) return drawPreviewCards(img); })
+          .catch(() => { /* 预热失败保持当前预览 */ });
+      }
+    } finally {
+      drawing = false;
     }
+  }
+
+  async function drawPreviewCards(img) {
     try {
       const opts = { ...cfg };
       if (previewTheme) opts.theme_id = previewTheme;
