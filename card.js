@@ -10,6 +10,7 @@
     shot_qr_corner: 'br', // tl | tr | bl | br，仅覆盖模式生效
     shot_default_mode: 'viewport', // selection | viewport | fullpage
     card_festival_bg: true, // 节日/节气主题背景，划线分享卡片与截图共用
+    card_memorial_bg: false, // 纪念日主题背景（七七、九一八、国家公祭日等严肃主题），默认关闭
     card_default_theme: '', // 当天无命中时的兜底风格：''=默认蓝渐变，或节日主题名（关掉节日开关时它就是常驻风格）
   };
 
@@ -172,7 +173,8 @@
   }
 
   // ========== 节日 / 节气主题背景 ==========
-  // 按当天日期命中，优先级：公历节日 > 农历节日/除夕 > 二十四节气 > 默认蓝渐变。
+  // 按当天日期命中，优先级：纪念日（开关开启时）> 公历节日（含母亲节/父亲节/感恩节现算）>
+  // 农历节日/除夕 > 二十四节气 > 默认蓝渐变。
   // 主题只换外圈渐变底与角落装饰，白色圆角卡与文字排版不动；卡内另铺一层 7% 透明度
   // 的同款装饰水印（paintCardAccent），正文对比度不受影响。农历表覆盖 1900-2049，
   // 之外的年份只做节气命中（solarToLunar 返回 null 自动跳过农历分支）。
@@ -254,10 +256,10 @@
     return new Date(ms).getUTCDate();
   }
 
-  // 公历节日（'月,日' -> 主题 id）；母亲节=5月第二个周日，在 resolveTheme 里现算
-  const SOLAR_FEST = { '1,1': 'newyear', '2,14': 'valentine', '3,8': 'women', '5,1': 'labor', '5,4': 'youth', '6,1': 'children', '9,10': 'teacher', '10,1': 'national', '12,24': 'christmaseve', '12,25': 'christmas' };
+  // 公历节日（'月,日' -> 主题 id）；母亲节/父亲节/感恩节为"第 N 个星期 X"，在 resolveTheme 里现算
+  const SOLAR_FEST = { '1,1': 'newyear', '2,14': 'valentine', '3,8': 'women', '3,12': 'arbor', '4,1': 'fools', '5,1': 'labor', '5,4': 'youth', '5,12': 'nurse', '6,1': 'children', '7,1': 'party', '8,1': 'army', '9,10': 'teacher', '10,1': 'national', '10,31': 'halloween', '12,24': 'christmaseve', '12,25': 'christmas' };
   // 农历节日（'月,日' -> 主题 id）；除夕单独判「腊月最后一天」
-  const LUNAR_FEST = { '1,1': 'spring', '1,15': 'lantern', '5,5': 'dragonboat', '7,7': 'qixi', '8,15': 'midautumn', '9,9': 'double9', '12,8': 'laba' };
+  const LUNAR_FEST = { '1,1': 'spring', '1,15': 'lantern', '2,2': 'longtaitou', '5,5': 'dragonboat', '7,7': 'qixi', '8,15': 'midautumn', '9,9': 'double9', '12,8': 'laba', '12,23': 'xiaonianN', '12,24': 'xiaonianS' };
 
   // ----- 装饰原语：全部以传入矩形 (x0,y0,w,h) 为参照、b=min(w,h)*s 为尺度基准；
   // 伪随机用固定种子（同一主题同一尺寸重绘结果逐像素一致，预览不闪烁）-----
@@ -485,6 +487,188 @@
     ctx.strokeStyle = '#8a5a3d'; ctx.lineWidth = Math.max(1, r * 0.13); ctx.lineCap = 'round';
     ctx.beginPath(); ctx.moveTo(x, y - r * 0.55); ctx.quadraticCurveTo(x + r * 0.1, y - r * 0.95, x + r * 0.3, y - r * 1.1); ctx.stroke();
     leaf(ctx, x + r * 0.5, y - r * 0.9, r * 0.62, -0.7, '#4a9e5a');
+    ctx.restore();
+  }
+  // 五角星：r 为外接圆半径，一角朝上
+  function star5(ctx, x, y, r, color, a = 1) {
+    ctx.save(); ctx.globalAlpha *= a; ctx.fillStyle = color;
+    ctx.beginPath();
+    for (let i = 0; i < 5; i++) {
+      const ang = -Math.PI / 2 + i * Math.PI * 2 / 5;
+      const vx = x + Math.cos(ang) * r, vy = y + Math.sin(ang) * r;
+      const ang2 = ang + Math.PI / 5;
+      if (i === 0) ctx.moveTo(vx, vy); else ctx.lineTo(vx, vy);
+      ctx.lineTo(x + Math.cos(ang2) * r * 0.42, y + Math.sin(ang2) * r * 0.42);
+    }
+    ctx.closePath(); ctx.fill(); ctx.restore();
+  }
+  // 蜡烛：(x,y) 为烛身底边中心，暖光火苗 + 柔光晕（纪念日主题的悼念烛光）
+  function candle(ctx, x, y, w, h, a = 1) {
+    ctx.save(); ctx.globalAlpha *= a;
+    const glow = ctx.createRadialGradient(x, y - h * 0.72, 0, x, y - h * 0.72, w * 1.6);
+    glow.addColorStop(0, 'rgba(255,214,140,0.45)'); glow.addColorStop(1, 'rgba(255,214,140,0)');
+    ctx.fillStyle = glow;
+    ctx.beginPath(); ctx.arc(x, y - h * 0.72, w * 1.6, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#f0e6d4';
+    roundRectPath(ctx, x - w / 2, y - h * 0.62, w, h * 0.62, Math.min(w * 0.18, w / 2)); ctx.fill();
+    ctx.strokeStyle = 'rgba(31,36,48,0.55)'; ctx.lineWidth = Math.max(1, w * 0.09); ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x, y - h * 0.62); ctx.lineTo(x, y - h * 0.7); ctx.stroke();
+    ctx.fillStyle = '#f7a23c';
+    ctx.beginPath();
+    ctx.moveTo(x, y - h * 0.98);
+    ctx.quadraticCurveTo(x + w * 0.24, y - h * 0.76, x, y - h * 0.66);
+    ctx.quadraticCurveTo(x - w * 0.24, y - h * 0.76, x, y - h * 0.98);
+    ctx.fill();
+    ctx.fillStyle = '#ffe9a8';
+    ctx.beginPath(); ctx.ellipse(x, y - h * 0.78, w * 0.09, h * 0.07, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  // 树：树干 + 三圆树冠（植树节）
+  function tree(ctx, x, y, h, color = '#3c8c50', trunkColor = 'rgba(140,100,70,0.85)') {
+    ctx.save();
+    ctx.fillStyle = trunkColor;
+    ctx.fillRect(x - h * 0.06, y - h * 0.42, h * 0.12, h * 0.42);
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(x, y - h * 0.62, h * 0.3, 0, Math.PI * 2);
+    ctx.arc(x - h * 0.24, y - h * 0.44, h * 0.2, 0, Math.PI * 2);
+    ctx.arc(x + h * 0.24, y - h * 0.44, h * 0.2, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
+  }
+  // 笑脸（愚人节）
+  function smiley(ctx, x, y, r, color = '#ffd93d') {
+    ctx.save(); ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(31,36,48,0.65)'; ctx.lineWidth = Math.max(1, r * 0.1); ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.arc(x, y + r * 0.1, r * 0.5, 0.3, Math.PI - 0.3); ctx.stroke();
+    ctx.fillStyle = 'rgba(31,36,48,0.65)';
+    ctx.beginPath(); ctx.arc(x - r * 0.32, y - r * 0.24, r * 0.1, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x + r * 0.32, y - r * 0.24, r * 0.1, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  // 医疗十字（护士节）：圆角实心十字
+  function medCross(ctx, x, y, size, color = '#e8708f') {
+    const a = size * 0.34, b = size * 0.5, r = a * 0.3;
+    ctx.save(); ctx.fillStyle = color;
+    roundRectPath(ctx, x - a, y - b, a * 2, b * 2, r); ctx.fill();
+    roundRectPath(ctx, x - b, y - a, b * 2, a * 2, r); ctx.fill();
+    ctx.restore();
+  }
+  // 南瓜（万圣夜）：橙身 + 竖棱 + 弯瓜蒂 + 高光
+  function pumpkin(ctx, x, y, r, body = '#ef8a2f') {
+    ctx.save();
+    ctx.fillStyle = body;
+    ctx.beginPath(); ctx.ellipse(x, y, r, r * 0.78, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(140,70,20,0.4)'; ctx.lineWidth = Math.max(1, r * 0.07);
+    for (const k of [0.45, 0.8]) {
+      ctx.beginPath(); ctx.ellipse(x, y, r * k, r * 0.78, 0, 0, Math.PI * 2); ctx.stroke();
+    }
+    ctx.strokeStyle = '#5a7a3a'; ctx.lineWidth = Math.max(1.2, r * 0.13); ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x, y - r * 0.74); ctx.quadraticCurveTo(x + r * 0.1, y - r * 1.08, x + r * 0.24, y - r * 1.12); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.beginPath(); ctx.ellipse(x - r * 0.32, y - r * 0.22, r * 0.16, r * 0.24, -0.5, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  // 蝙蝠（万圣夜）：双翼剪影 + 小耳
+  function bat(ctx, x, y, r, a = 1) {
+    ctx.save(); ctx.globalAlpha *= a; ctx.fillStyle = 'rgba(56,44,80,0.85)';
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.quadraticCurveTo(x - r * 0.3, y - r * 0.45, x - r, y - r * 0.2);
+    ctx.quadraticCurveTo(x - r * 0.55, y + r * 0.05, x - r * 0.62, y + r * 0.38);
+    ctx.quadraticCurveTo(x - r * 0.3, y + r * 0.18, x, y + r * 0.3);
+    ctx.quadraticCurveTo(x + r * 0.3, y + r * 0.18, x + r * 0.62, y + r * 0.38);
+    ctx.quadraticCurveTo(x + r * 0.55, y + r * 0.05, x + r, y - r * 0.2);
+    ctx.quadraticCurveTo(x + r * 0.3, y - r * 0.45, x, y);
+    ctx.moveTo(x - r * 0.16, y - r * 0.08);
+    ctx.lineTo(x - r * 0.2, y - r * 0.42);
+    ctx.lineTo(x - r * 0.02, y - r * 0.16);
+    ctx.moveTo(x + r * 0.16, y - r * 0.08);
+    ctx.lineTo(x + r * 0.2, y - r * 0.42);
+    ctx.lineTo(x + r * 0.02, y - r * 0.16);
+    ctx.fill();
+    ctx.restore();
+  }
+  // 领带（父亲节）：(x,y) 为领结顶边中心，结 + 箭头形带身向下延伸 h
+  function necktie(ctx, x, y, w, h, color = '#3d5aa8') {
+    ctx.save(); ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(x - w * 0.32, y);
+    ctx.lineTo(x + w * 0.32, y);
+    ctx.lineTo(x + w * 0.18, y + h * 0.2);
+    ctx.lineTo(x - w * 0.18, y + h * 0.2);
+    ctx.closePath(); ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(x - w * 0.18, y + h * 0.23);
+    ctx.lineTo(x + w * 0.18, y + h * 0.23);
+    ctx.lineTo(x + w * 0.3, y + h * 0.86);
+    ctx.lineTo(x, y + h);
+    ctx.lineTo(x - w * 0.3, y + h * 0.86);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.25)';
+    ctx.beginPath();
+    ctx.moveTo(x - w * 0.08, y + h * 0.23);
+    ctx.lineTo(x + w * 0.02, y + h * 0.23);
+    ctx.lineTo(x - w * 0.06, y + h * 0.9);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+  // 糖瓜（小年）：白胖糖球 + 高光 + 淡影
+  function sugarBall(ctx, x, y, r, a = 1) {
+    ctx.save(); ctx.globalAlpha *= a;
+    ctx.fillStyle = 'rgba(31,36,48,0.1)';
+    ctx.beginPath(); ctx.ellipse(x, y + r * 0.92, r * 0.8, r * 0.2, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = '#fdf6e8';
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(210,180,130,0.5)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.beginPath(); ctx.ellipse(x - r * 0.3, y - r * 0.3, r * 0.22, r * 0.13, -0.6, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  // 龙（龙抬头）：S 形龙身 + 背鳍 + 圆头双角龙须；(x,y) 为龙身起点，龙头朝右上
+  function dragon(ctx, x, y, len, rot = 0, color = '#d6a94a', a = 1) {
+    ctx.save(); ctx.globalAlpha *= a;
+    ctx.translate(x, y); ctx.rotate(rot);
+    const P = [[0, 0], [len * 0.3, len * 0.2], [len * 0.42, -len * 0.26], [len * 0.66, -len * 0.32]];
+    const bez = (t) => {
+      const u = 1 - t;
+      return [
+        u * u * u * P[0][0] + 3 * u * u * t * P[1][0] + 3 * u * t * t * P[2][0] + t * t * t * P[3][0],
+        u * u * u * P[0][1] + 3 * u * u * t * P[1][1] + 3 * u * t * t * P[2][1] + t * t * t * P[3][1],
+      ];
+    };
+    ctx.strokeStyle = color; ctx.lineWidth = Math.max(1.5, len * 0.1); ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(P[0][0], P[0][1]);
+    ctx.bezierCurveTo(P[1][0], P[1][1], P[2][0], P[2][1], P[3][0], P[3][1]); ctx.stroke();
+    // 背鳍：沿龙身取点，向法线方向画小三角
+    ctx.fillStyle = color;
+    for (const t of [0.2, 0.44, 0.66]) {
+      const [px, py] = bez(t), [qx, qy] = bez(t + 0.05);
+      const dx = qx - px, dy = qy - py, dl = Math.hypot(dx, dy) || 1;
+      const nx = -dy / dl, ny = dx / dl;
+      ctx.beginPath();
+      ctx.moveTo(px + dx * 0.04, py + dy * 0.04);
+      ctx.lineTo(px - dx * 0.04 + nx * len * 0.11, py - dy * 0.04 + ny * len * 0.11);
+      ctx.lineTo(px - dx * 0.11, py - dy * 0.11);
+      ctx.closePath(); ctx.fill();
+    }
+    // 龙头：沿曲线末端方向放置圆头 + 独角 + 眼 + 双龙须
+    const hx = P[3][0], hy = P[3][1];
+    const [tx, ty] = bez(0.88);
+    ctx.save();
+    ctx.translate(hx, hy); ctx.rotate(Math.atan2(hy - ty, hx - tx));
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.ellipse(len * 0.06, 0, len * 0.1, len * 0.078, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = color; ctx.lineWidth = Math.max(1, len * 0.035); ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(0, -len * 0.05); ctx.quadraticCurveTo(len * 0.02, -len * 0.16, len * 0.07, -len * 0.18); ctx.stroke();
+    ctx.fillStyle = 'rgba(31,36,48,0.7)';
+    ctx.beginPath(); ctx.arc(len * 0.09, -len * 0.015, len * 0.017, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(214,169,74,0.85)'; ctx.lineWidth = Math.max(1, len * 0.025);
+    ctx.beginPath(); ctx.moveTo(len * 0.14, len * 0.01); ctx.quadraticCurveTo(len * 0.2, len * 0.03, len * 0.23, len * 0.08); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(len * 0.14, len * 0.035); ctx.quadraticCurveTo(len * 0.19, len * 0.07, len * 0.21, len * 0.12); ctx.stroke();
+    ctx.restore();
     ctx.restore();
   }
 
@@ -719,6 +903,19 @@
         lantern(ctx, x0 + u * 0.685, y0 + u * 0.09, u * 0.12, u * 0.088, '#f08a5a');
       },
     },
+    longtaitou: {
+      name: '龙抬头', when: { lunar: [2, 2] }, grad: ['#9a6a35', '#e0c284'],
+      deco(ctx, x0, y0, w, h, s) {
+        const b = Math.min(w, h) * s;
+        dragon(ctx, x0 + w - b * 0.26, y0 + b * 0.2, b * 0.15, 0, 'rgba(214,169,74,0.85)');
+        cloud(ctx, x0 + b * 0.1, y0 + h - b * 0.09, b * 0.12, 'rgba(255,255,255,0.35)');
+        cornerScatter(ctx, x0, y0, w, h, 7, 31, (c, x, y, rng) => star4(c, x, y, b * (0.005 + rng() * 0.006), 'rgba(255,235,190,0.8)'));
+      },
+      big(ctx, x0, y0, w) {
+        const u = w;
+        dragon(ctx, x0 + u * 0.6, y0 + u * 0.28, u * 0.3, 0, '#d6a94a');
+      },
+    },
     valentine: {
       name: '情人节', when: { solar: [2, 14] }, grad: ['#d9648f', '#f3b3c8'],
       deco(ctx, x0, y0, w, h, s) {
@@ -748,6 +945,33 @@
         blossom(ctx, x0 + u * 0.7, y0 + u * 0.3, u * 0.07, '#e5b8ee', '#b06ac8');
       },
     },
+    arbor: {
+      name: '植树节', when: { solar: [3, 12] }, grad: ['#4a9e5a', '#a8d8a0'],
+      deco(ctx, x0, y0, w, h, s) {
+        const b = Math.min(w, h) * s;
+        tree(ctx, x0 + w - b * 0.11, y0 + b * 0.15, b * 0.11, 'rgba(50,130,75,0.85)');
+        sprout(ctx, x0 + b * 0.08, y0 + h - b * 0.08, b * 0.06, 'rgba(60,140,80,0.7)');
+        cornerScatter(ctx, x0, y0, w, h, 6, 32, (c, x, y, rng) => petal(c, x, y, b * 0.011, rng() * Math.PI, 'rgba(255,255,255,0.55)'));
+      },
+      big(ctx, x0, y0, w) {
+        const u = w;
+        tree(ctx, x0 + u * 0.81, y0 + u * 0.34, u * 0.34, 'rgba(45,125,70,0.95)');
+      },
+    },
+    fools: {
+      name: '愚人节', when: { solar: [4, 1] }, grad: ['#8a6ad0', '#d4c1f2'],
+      deco(ctx, x0, y0, w, h, s) {
+        const b = Math.min(w, h) * s;
+        smiley(ctx, x0 + w - b * 0.09, y0 + b * 0.1, b * 0.038, 'rgba(255,225,120,0.95)');
+        smiley(ctx, x0 + b * 0.08, y0 + h - b * 0.09, b * 0.03, 'rgba(255,225,120,0.8)');
+        const cols = ['#ffd93d', '#ffffff', '#c9b6f0'];
+        cornerScatter(ctx, x0, y0, w, h, 9, 33, (c, x, y, rng) => confetti(c, x, y, b * (0.012 + rng() * 0.01), rng() * Math.PI, cols[Math.floor(rng() * cols.length)], 0.8));
+      },
+      big(ctx, x0, y0, w) {
+        const u = w;
+        smiley(ctx, x0 + u * 0.84, y0 + u * 0.17, u * 0.12, '#ffd93d');
+      },
+    },
     labor: {
       name: '劳动节', when: { solar: [5, 1] }, grad: ['#e09b3d', '#f3ce8a'],
       deco(ctx, x0, y0, w, h, s) {
@@ -773,6 +997,19 @@
         const u = w;
         star4(ctx, x0 + u * 0.84, y0 + u * 0.16, u * 0.13, '#f7c948');
         star4(ctx, x0 + u * 0.68, y0 + u * 0.28, u * 0.06, '#7fb3e8');
+      },
+    },
+    nurse: {
+      name: '护士节', when: { solar: [5, 12] }, grad: ['#6fa8cc', '#c2e2f2'],
+      deco(ctx, x0, y0, w, h, s) {
+        const b = Math.min(w, h) * s;
+        medCross(ctx, x0 + w - b * 0.09, y0 + b * 0.1, b * 0.075, 'rgba(255,255,255,0.9)');
+        medCross(ctx, x0 + b * 0.08, y0 + h - b * 0.09, b * 0.055, 'rgba(232,106,138,0.75)');
+        cornerScatter(ctx, x0, y0, w, h, 7, 34, (c, x, y, rng) => heart(c, x, y, b * (0.012 + rng() * 0.014), 'rgba(255,255,255,0.5)'));
+      },
+      big(ctx, x0, y0, w) {
+        const u = w;
+        medCross(ctx, x0 + u * 0.84, y0 + u * 0.17, u * 0.22, '#e8708f');
       },
     },
     children: {
@@ -803,6 +1040,19 @@
         const u = w;
         blossom(ctx, x0 + u * 0.84, y0 + u * 0.16, u * 0.115, '#f09aae', '#e0708a');
         blossom(ctx, x0 + u * 0.7, y0 + u * 0.3, u * 0.07, '#f5b8c5', '#e0708a');
+      },
+    },
+    father: {
+      name: '父亲节', when: { father: true }, grad: ['#3d6ab8', '#8fb4e4'],
+      deco(ctx, x0, y0, w, h, s) {
+        const b = Math.min(w, h) * s;
+        necktie(ctx, x0 + w - b * 0.1, y0 + b * 0.07, b * 0.052, b * 0.13, 'rgba(255,255,255,0.85)');
+        necktie(ctx, x0 + b * 0.09, y0 + h - b * 0.2, b * 0.04, b * 0.1, 'rgba(255,217,138,0.8)');
+        cornerScatter(ctx, x0, y0, w, h, 7, 35, (c, x, y, rng) => star4(c, x, y, b * (0.006 + rng() * 0.007), 'rgba(255,255,255,0.8)'));
+      },
+      big(ctx, x0, y0, w) {
+        const u = w;
+        necktie(ctx, x0 + u * 0.82, y0 + u * 0.05, u * 0.15, u * 0.34, 'rgba(255,255,255,0.9)');
       },
     },
     dragonboat: {
@@ -850,6 +1100,21 @@
         star4(ctx, x0 + u * 0.67, y0 + u * 0.09, u * 0.05, '#f7c445');
       },
     },
+    party: {
+      name: '建党节', when: { solar: [7, 1] }, grad: ['#a01818', '#d86a3a'],
+      deco(ctx, x0, y0, w, h, s) {
+        const b = Math.min(w, h) * s;
+        star5(ctx, x0 + w - b * 0.09, y0 + b * 0.1, b * 0.045, 'rgba(255,217,138,0.95)');
+        star5(ctx, x0 + b * 0.08, y0 + h - b * 0.1, b * 0.035, 'rgba(255,217,138,0.8)');
+        const cols = ['#ffd98a', '#ffffff', '#ff9a6a'];
+        cornerScatter(ctx, x0, y0, w, h, 8, 36, (c, x, y, rng) => confetti(c, x, y, b * (0.012 + rng() * 0.01), rng() * Math.PI, cols[Math.floor(rng() * cols.length)], 0.8));
+      },
+      big(ctx, x0, y0, w) {
+        const u = w;
+        star5(ctx, x0 + u * 0.82, y0 + u * 0.19, u * 0.14, '#f0c060');
+        star5(ctx, x0 + u * 0.66, y0 + u * 0.1, u * 0.06, '#e8a04a');
+      },
+    },
     teacher: {
       name: '教师节', when: { solar: [9, 10] }, grad: ['#d99a3d', '#f3d9a0'],
       deco(ctx, x0, y0, w, h, s) {
@@ -862,6 +1127,19 @@
         const u = w;
         blossom(ctx, x0 + u * 0.84, y0 + u * 0.16, u * 0.115, '#f0c070', '#dd9530');
         blossom(ctx, x0 + u * 0.7, y0 + u * 0.3, u * 0.07, '#f6d9a5', '#dd9530');
+      },
+    },
+    army: {
+      name: '建军节', when: { solar: [8, 1] }, grad: ['#4a6a50', '#9ab88a'],
+      deco(ctx, x0, y0, w, h, s) {
+        const b = Math.min(w, h) * s;
+        star5(ctx, x0 + w - b * 0.09, y0 + b * 0.1, b * 0.042, 'rgba(230,70,60,0.9)');
+        star5(ctx, x0 + b * 0.08, y0 + h - b * 0.1, b * 0.032, 'rgba(230,70,60,0.75)');
+        cornerScatter(ctx, x0, y0, w, h, 7, 37, (c, x, y, rng) => star4(c, x, y, b * (0.005 + rng() * 0.006), 'rgba(255,255,255,0.7)'));
+      },
+      big(ctx, x0, y0, w) {
+        const u = w;
+        star5(ctx, x0 + u * 0.82, y0 + u * 0.19, u * 0.14, '#e04a3a');
       },
     },
     national: {
@@ -907,6 +1185,35 @@
         leaf(ctx, x0 + u * 0.69, y0 + u * 0.29, u * 0.1, -1.5, 'rgba(196,110,60,0.8)');
       },
     },
+    halloween: {
+      name: '万圣夜', when: { solar: [10, 31] }, grad: ['#3d2a5a', '#8a66ae'],
+      deco(ctx, x0, y0, w, h, s) {
+        const b = Math.min(w, h) * s;
+        pumpkin(ctx, x0 + w - b * 0.1, y0 + b * 0.12, b * 0.045);
+        bat(ctx, x0 + w - b * 0.24, y0 + b * 0.07, b * 0.026, 0.85);
+        bat(ctx, x0 + b * 0.1, y0 + h - b * 0.1, b * 0.024, 0.7);
+        cornerScatter(ctx, x0, y0, w, h, 8, 38, (c, x, y, rng) => star4(c, x, y, b * (0.005 + rng() * 0.006), 'rgba(255,235,170,0.75)'));
+      },
+      big(ctx, x0, y0, w) {
+        const u = w;
+        pumpkin(ctx, x0 + u * 0.83, y0 + u * 0.2, u * 0.13);
+        bat(ctx, x0 + u * 0.63, y0 + u * 0.09, u * 0.06, 0.9);
+      },
+    },
+    thanksgiving: {
+      name: '感恩节', when: { thanksgiving: true }, grad: ['#b06a3d', '#eab88a'],
+      deco(ctx, x0, y0, w, h, s) {
+        const b = Math.min(w, h) * s;
+        const cols = ['rgba(200,110,50,0.7)', 'rgba(180,130,50,0.7)', 'rgba(160,90,40,0.6)'];
+        cornerScatter(ctx, x0, y0, w, h, 10, 39, (c, x, y, rng) => leaf(c, x, y, b * (0.03 + rng() * 0.028), rng() * Math.PI * 2, cols[Math.floor(rng() * cols.length)]));
+        heart(ctx, x0 + w - b * 0.08, y0 + b * 0.09, b * 0.032, 'rgba(255,255,255,0.7)');
+      },
+      big(ctx, x0, y0, w) {
+        const u = w;
+        leaf(ctx, x0 + u * 0.85, y0 + u * 0.13, u * 0.26, -0.5, 'rgba(190,110,50,0.95)');
+        leaf(ctx, x0 + u * 0.7, y0 + u * 0.25, u * 0.16, -1.3, 'rgba(170,125,50,0.85)');
+      },
+    },
     laba: {
       name: '腊八', when: { lunar: [12, 8] }, grad: ['#8a5a3d', '#d0a37a'],
       deco(ctx, x0, y0, w, h, s) {
@@ -921,6 +1228,35 @@
       big(ctx, x0, y0, w) {
         const u = w;
         flake(ctx, x0 + u * 0.84, y0 + u * 0.17, u * 0.13, 'rgba(159,180,204,0.95)');
+      },
+    },
+    xiaonianN: {
+      name: '小年（北方）', when: { lunar: [12, 23] }, grad: ['#b04a2f', '#e8a06a'],
+      deco(ctx, x0, y0, w, h, s) {
+        const b = Math.min(w, h) * s;
+        lantern(ctx, x0 + w - b * 0.09, y0 + b * 0.12, b * 0.07, b * 0.051);
+        cornerScatter(ctx, x0, y0, w, h, 5, 40, (c, x, y, rng) => sugarBall(c, x, y, b * (0.012 + rng() * 0.008)));
+        cornerScatter(ctx, x0, y0, w, h, 6, 41, (c, x, y, rng) => star4(c, x, y, b * (0.005 + rng() * 0.006), 'rgba(255,235,190,0.8)'));
+      },
+      big(ctx, x0, y0, w) {
+        const u = w;
+        lantern(ctx, x0 + u * 0.84, y0 + u * 0.17, u * 0.23, u * 0.167);
+        sugarBall(ctx, x0 + u * 0.65, y0 + u * 0.31, u * 0.055);
+      },
+    },
+    xiaonianS: {
+      name: '小年（南方）', when: { lunar: [12, 24] }, grad: ['#c05a3a', '#f0b884'],
+      deco(ctx, x0, y0, w, h, s) {
+        const b = Math.min(w, h) * s;
+        cornerScatter(ctx, x0, y0, w, h, 6, 42, (c, x, y, rng) => sugarBall(c, x, y, b * (0.013 + rng() * 0.009)));
+        star4(ctx, x0 + w - b * 0.08, y0 + b * 0.09, b * 0.008, 'rgba(255,235,190,0.9)');
+        lantern(ctx, x0 + b * 0.09, y0 + h - b * 0.12, b * 0.06, b * 0.044, '#f0605a');
+      },
+      big(ctx, x0, y0, w) {
+        const u = w;
+        sugarBall(ctx, x0 + u * 0.8, y0 + u * 0.2, u * 0.11);
+        sugarBall(ctx, x0 + u * 0.63, y0 + u * 0.32, u * 0.06);
+        lantern(ctx, x0 + u * 0.89, y0 + u * 0.08, u * 0.1, u * 0.073, '#f0605a');
       },
     },
     christmaseve: {
@@ -960,10 +1296,140 @@
     },
   };
 
-  // 当天命中的主题；无命中返回 null（用默认蓝渐变）
-  function resolveTheme(date) {
+  // ----- 纪念日主题：风格严肃（深色低饱和 + 悼念烛光/五角星），isMemorial 标记，
+  // 默认关闭，由设置 card_memorial_bg 单独控制；开启时优先于同日节日主题
+  // （如 7/1 建党节让位香港回归纪念日、5/12 护士节让位防灾减灾日） -----
+  const MEMORIALS = {
+    leifeng: {
+      name: '学雷锋纪念日', isMemorial: true, when: { solar: [3, 5] }, grad: ['#8a4a3a', '#c98a7a'],
+      deco(ctx, x0, y0, w, h, s) {
+        const b = Math.min(w, h) * s;
+        heart(ctx, x0 + w - b * 0.09, y0 + b * 0.1, b * 0.036, 'rgba(255,255,255,0.75)');
+        heart(ctx, x0 + b * 0.08, y0 + h - b * 0.09, b * 0.028, 'rgba(255,255,255,0.55)');
+        cornerScatter(ctx, x0, y0, w, h, 6, 50, (c, x, y, rng) => star4(c, x, y, b * (0.005 + rng() * 0.006), 'rgba(255,240,220,0.7)'));
+      },
+      big(ctx, x0, y0, w) {
+        const u = w;
+        heart(ctx, x0 + u * 0.84, y0 + u * 0.17, u * 0.115, '#e0a090');
+      },
+    },
+    disaster: {
+      name: '防灾减灾日', isMemorial: true, when: { solar: [5, 12] }, grad: ['#4a5a6a', '#93a5b5'],
+      deco(ctx, x0, y0, w, h, s) {
+        const b = Math.min(w, h) * s;
+        cloud(ctx, x0 + w - b * 0.11, y0 + b * 0.09, b * 0.11, 'rgba(255,255,255,0.35)');
+        cornerScatter(ctx, x0, y0, w, h, 8, 51, (c, x, y, rng) => raindrop(c, x, y, b * (0.016 + rng() * 0.016), 'rgba(255,255,255,0.4)'));
+      },
+      big(ctx, x0, y0, w) {
+        const u = w;
+        cloud(ctx, x0 + u * 0.83, y0 + u * 0.15, u * 0.28, 'rgba(230,238,245,0.9)');
+      },
+    },
+    qiqi: {
+      name: '七七事变纪念日', isMemorial: true, when: { solar: [7, 7] }, grad: ['#26262e', '#5c5c66'],
+      deco(ctx, x0, y0, w, h, s) {
+        const b = Math.min(w, h) * s;
+        candle(ctx, x0 + b * 0.08, y0 + h - b * 0.11, b * 0.028, b * 0.075, 0.9);
+        cornerScatter(ctx, x0, y0, w, h, 6, 52, (c, x, y, rng) => star4(c, x, y, b * (0.004 + rng() * 0.005), 'rgba(255,240,210,0.5)'));
+      },
+      big(ctx, x0, y0, w) {
+        const u = w;
+        candle(ctx, x0 + u * 0.83, y0 + u * 0.31, u * 0.09, u * 0.26);
+      },
+    },
+    hkreturn: {
+      name: '香港回归纪念日', isMemorial: true, when: { solar: [7, 1] }, grad: ['#5a2f6a', '#a878c0'],
+      deco(ctx, x0, y0, w, h, s) {
+        const b = Math.min(w, h) * s;
+        blossom(ctx, x0 + w - b * 0.08, y0 + b * 0.09, b * 0.05, '#e8c8f0', '#b06ac8'); // 紫荆
+        blossom(ctx, x0 + b * 0.08, y0 + h - b * 0.08, b * 0.04, '#e8c8f0', '#b06ac8', 0.85);
+        cornerScatter(ctx, x0, y0, w, h, 6, 53, (c, x, y, rng) => petal(c, x, y, b * 0.011, rng() * Math.PI, 'rgba(255,255,255,0.5)'));
+      },
+      big(ctx, x0, y0, w) {
+        const u = w;
+        blossom(ctx, x0 + u * 0.84, y0 + u * 0.16, u * 0.115, '#dcaee8', '#a05ab8');
+        blossom(ctx, x0 + u * 0.7, y0 + u * 0.3, u * 0.07, '#ecc8f2', '#a05ab8');
+      },
+    },
+    victory: {
+      name: '抗战胜利纪念日', isMemorial: true, when: { solar: [9, 3] }, grad: ['#6a1616', '#b85a42'],
+      deco(ctx, x0, y0, w, h, s) {
+        const b = Math.min(w, h) * s;
+        star5(ctx, x0 + w - b * 0.09, y0 + b * 0.1, b * 0.04, 'rgba(255,217,138,0.85)');
+        cornerScatter(ctx, x0, y0, w, h, 6, 54, (c, x, y, rng) => star4(c, x, y, b * (0.004 + rng() * 0.006), 'rgba(255,235,190,0.6)'));
+      },
+      big(ctx, x0, y0, w) {
+        const u = w;
+        star5(ctx, x0 + u * 0.82, y0 + u * 0.19, u * 0.13, 'rgba(240,192,96,0.9)');
+      },
+    },
+    jiuyiba: {
+      name: '九一八纪念日', isMemorial: true, when: { solar: [9, 18] }, grad: ['#22262e', '#55606e'],
+      deco(ctx, x0, y0, w, h, s) {
+        const b = Math.min(w, h) * s;
+        candle(ctx, x0 + b * 0.08, y0 + h - b * 0.11, b * 0.028, b * 0.075, 0.9);
+        cornerScatter(ctx, x0, y0, w, h, 6, 55, (c, x, y, rng) => star4(c, x, y, b * (0.004 + rng() * 0.005), 'rgba(255,240,210,0.5)'));
+      },
+      big(ctx, x0, y0, w) {
+        const u = w;
+        candle(ctx, x0 + u * 0.83, y0 + u * 0.31, u * 0.09, u * 0.26);
+      },
+    },
+    martyrs: {
+      name: '烈士纪念日', isMemorial: true, when: { solar: [9, 30] }, grad: ['#26292b', '#5f6668'],
+      deco(ctx, x0, y0, w, h, s) {
+        const b = Math.min(w, h) * s;
+        candle(ctx, x0 + b * 0.08, y0 + h - b * 0.11, b * 0.028, b * 0.075, 0.9);
+        star5(ctx, x0 + w - b * 0.09, y0 + b * 0.1, b * 0.03, 'rgba(240,192,96,0.6)');
+      },
+      big(ctx, x0, y0, w) {
+        const u = w;
+        candle(ctx, x0 + u * 0.83, y0 + u * 0.31, u * 0.09, u * 0.26);
+        star5(ctx, x0 + u * 0.64, y0 + u * 0.14, u * 0.05, 'rgba(240,192,96,0.8)');
+      },
+    },
+    gongji: {
+      name: '国家公祭日', isMemorial: true, when: { solar: [12, 13] }, grad: ['#1d1e22', '#484a50'],
+      deco(ctx, x0, y0, w, h, s) {
+        const b = Math.min(w, h) * s;
+        candle(ctx, x0 + w - b * 0.1, y0 + h - b * 0.13, b * 0.03, b * 0.08, 0.9);
+        candle(ctx, x0 + b * 0.08, y0 + h - b * 0.1, b * 0.024, b * 0.066, 0.75);
+        cornerScatter(ctx, x0, y0, w, h, 5, 56, (c, x, y, rng) => star4(c, x, y, b * (0.004 + rng() * 0.004), 'rgba(255,240,210,0.4)'));
+      },
+      big(ctx, x0, y0, w) {
+        const u = w;
+        candle(ctx, x0 + u * 0.82, y0 + u * 0.32, u * 0.095, u * 0.27);
+        candle(ctx, x0 + u * 0.66, y0 + u * 0.3, u * 0.06, u * 0.17);
+      },
+    },
+    macau: {
+      name: '澳门回归纪念日', isMemorial: true, when: { solar: [12, 20] }, grad: ['#2f5244', '#7aa890'],
+      deco(ctx, x0, y0, w, h, s) {
+        const b = Math.min(w, h) * s;
+        blossom(ctx, x0 + w - b * 0.08, y0 + b * 0.09, b * 0.05, '#f2f7ee', '#8ab89a'); // 莲花
+        blossom(ctx, x0 + b * 0.08, y0 + h - b * 0.08, b * 0.04, '#f2f7ee', '#8ab89a', 0.85);
+        cornerScatter(ctx, x0, y0, w, h, 6, 57, (c, x, y, rng) => petal(c, x, y, b * 0.011, rng() * Math.PI, 'rgba(255,255,255,0.45)'));
+      },
+      big(ctx, x0, y0, w) {
+        const u = w;
+        blossom(ctx, x0 + u * 0.84, y0 + u * 0.16, u * 0.115, '#eef5e8', '#7aa88a');
+        blossom(ctx, x0 + u * 0.7, y0 + u * 0.3, u * 0.07, '#f5f9f0', '#7aa88a');
+      },
+    },
+  };
+  const MEMORIAL_FEST = { '3,5': 'leifeng', '5,12': 'disaster', '7,1': 'hkreturn', '7,7': 'qiqi', '9,3': 'victory', '9,18': 'jiuyiba', '9,30': 'martyrs', '12,13': 'gongji', '12,20': 'macau' };
+
+  // 当天命中的主题；无命中返回 null（用默认蓝渐变）。
+  // memorial=true 时纪念日主题优先于同日节日主题（如 7/1 香港回归纪念日优先于建党节）
+  function resolveTheme(date, memorial = false) {
     const y = date.getFullYear(), m = date.getMonth() + 1, d = date.getDate();
     if (m === 5 && d === 1 + ((0 - new Date(y, 4, 1).getDay() + 7) % 7) + 7) return THEMES.mother; // 5月第二个周日
+    if (m === 6 && d === 1 + ((0 - new Date(y, 5, 1).getDay() + 7) % 7) + 14) return THEMES.father; // 6月第三个周日
+    if (m === 11 && d === 1 + ((4 - new Date(y, 10, 1).getDay() + 7) % 7) + 21) return THEMES.thanksgiving; // 11月第四个周四
+    if (memorial) {
+      const mem = MEMORIAL_FEST[`${m},${d}`];
+      if (mem) return MEMORIALS[mem];
+    }
     const fest = SOLAR_FEST[`${m},${d}`];
     if (fest) return THEMES[fest];
     const lun = solarToLunar(y, m, d);
@@ -978,6 +1444,17 @@
     if (termDay(y, n) === d) return TERM_THEMES[n];
     if (termDay(y, n + 1) === d) return TERM_THEMES[n + 1];
     return null;
+  }
+
+  // 统一按"两个开关"解析当天主题：memorial 开启时纪念日优先，festival 关闭则只看纪念日。
+  // 划线分享卡片、截图合成与设置页自动标签共用，避免各调用点重复纪念日分支
+  function resolveDayTheme(date, { festival = true, memorial = false } = {}) {
+    const m = date.getMonth() + 1, d = date.getDate();
+    if (memorial) {
+      const mem = MEMORIAL_FEST[`${m},${d}`];
+      if (mem) return MEMORIALS[mem];
+    }
+    return festival ? resolveTheme(date) : null;
   }
 
   // 带主题的渐变底 + 角落装饰；无主题时与旧版逐像素一致
@@ -1018,8 +1495,8 @@
     ctx.restore();
   }
 
-  // 设置页预览选择器的候选：节日在前、节气在后
-  const THEME_LIST = [...Object.values(THEMES), ...TERM_THEMES];
+  // 设置页预览选择器的候选：节日在前、节气在后、纪念日居中
+  const THEME_LIST = [...Object.values(THEMES), ...Object.values(MEMORIALS), ...TERM_THEMES];
 
   // 主题在指定公历年份的实际日期文案（'M月D日'，设置页选择器展示用）；无法计算返回 ''。
   // 农历节日的「当年日期」按公历年逐日扫描命中（腊八这类农历年末节日会落在次年初，
@@ -1048,16 +1525,19 @@
     if (w.term != null) return `${Math.floor(w.term / 2) + 1}月${termDay(year, w.term)}日`;
     if (w.solar) return `${w.solar[0]}月${w.solar[1]}日`;
     if (w.mother) return `5月${1 + ((0 - new Date(year, 4, 1).getDay() + 7) % 7) + 7}日`; // 5月第二个周日
+    if (w.father) return `6月${1 + ((0 - new Date(year, 5, 1).getDay() + 7) % 7) + 14}日`; // 6月第三个周日
+    if (w.thanksgiving) return `11月${1 + ((4 - new Date(year, 10, 1).getDay() + 7) % 7) + 21}日`; // 11月第四个周四
     if (w.lunar || w.chuxi) return lunarDatesInYear(year).get(w.chuxi ? 'chuxi' : `${w.lunar[0]},${w.lunar[1]}`) || '';
     return '';
   }
 
   // 用 Canvas 绘制金句卡片，返回 dataURL(2x)。
-  // festive=false 关掉节日/节气背景；themeId 指定主题名（设置页预览用，优先级最高）；
+  // festive=false 关掉节日/节气背景；memorial 开启纪念日主题（优先于节日）；
+  // themeId 指定主题名（设置页预览用，优先级最高）；
   // defaultTheme 是无命中时的兜底风格名（card_default_theme 设置）
-  function drawShareCard({ text, title, site, url, festive = true, themeId = '', defaultTheme = '' }) {
+  function drawShareCard({ text, title, site, url, festive = true, memorial = false, themeId = '', defaultTheme = '' }) {
     const theme = themeId ? (THEME_LIST.find((t) => t.name === themeId) || null)
-      : ((festive === false ? null : resolveTheme(new Date()))
+      : (resolveDayTheme(new Date(), { festival: festive !== false, memorial: memorial === true })
         || (defaultTheme ? THEME_LIST.find((t) => t.name === defaultTheme) || null : null));
     const W = 720, PAD = 56, DPR = 2;
     // 先用离屏 canvas 测量文字行数
@@ -1258,7 +1738,7 @@
     const when = o.shot_time ? fmtShotTime(time) : '';
     // theme_id 是设置页预览的临时指定（不落 storage），优先于开关与默认风格
     const theme = o.theme_id ? (THEME_LIST.find((t) => t.name === o.theme_id) || null)
-      : ((o.card_festival_bg === false ? null : resolveTheme(new Date(time)))
+      : (resolveDayTheme(new Date(time), { festival: o.card_festival_bg !== false, memorial: o.card_memorial_bg === true })
         || (o.card_default_theme ? THEME_LIST.find((t) => t.name === o.card_default_theme) || null : null));
     if (!qr && !brand && !when && !theme) return dataUrl;
 
@@ -1450,6 +1930,7 @@
     paintWhiteCard,
     paintCardAccent,
     resolveTheme,
+    resolveDayTheme,
     themeDateInYear,
     THEME_LIST,
     fmtShotTime,
