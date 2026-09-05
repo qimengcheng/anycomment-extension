@@ -672,31 +672,798 @@
     ctx.restore();
   }
 
-  // ----- 二十四节气主题：每个节气独立渐变配色 + 当季装饰（种子取节气下标，重绘稳定）-----
-  // kind: plum 小寒大寒梅花 | sprout 嫩芽 | rain 雨丝 | petal 春花瓣 | qingming 清明雨柳
-  //       leaf 秋叶 | wheat 麦穗 | sun 盛夏烈日 | dew 白露寒露露珠 | frost 霜 | snow 冬雪
+  // ---------- 主题专属图形原语（每主题一个独有主图案；25% 半透明压白卡上，勿用纯白/近白填色）----------
+  // 五星红旗（国庆）：旗杆 + 波浪红旗 + 一大四小黄星
+  function flag(ctx, x, y, w, h) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(130,100,70,0.9)'; ctx.lineWidth = Math.max(1.5, w * 0.035); ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x, y + h); ctx.lineTo(x, y); ctx.stroke();
+    ctx.fillStyle = 'rgba(220,70,55,0.95)';
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.quadraticCurveTo(x + w * 0.45, y + h * 0.18, x + w, y + h * 0.06);
+    ctx.lineTo(x + w, y + h * 0.56);
+    ctx.quadraticCurveTo(x + w * 0.45, y + h * 0.68, x, y + h * 0.5);
+    ctx.closePath(); ctx.fill();
+    star5(ctx, x + w * 0.2, y + h * 0.22, w * 0.09, '#f0c050');
+    for (const [sx, sy] of [[0.38, 0.12], [0.46, 0.26], [0.46, 0.42], [0.38, 0.55]]) {
+      star5(ctx, x + w * sx, y + h * sy, w * 0.038, '#f0c050');
+    }
+    ctx.restore();
+  }
+  // 礼花筒（元旦）：锥筒尖朝左下，彩带彩点向右上喷出
+  function popper(ctx, x, y, size, rot = 0) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+    ctx.fillStyle = 'rgba(226,120,80,0.95)';
+    ctx.beginPath();
+    ctx.moveTo(-size * 0.5, size * 0.5);
+    ctx.lineTo(-size * 0.08, size * 0.34);
+    ctx.lineTo(-size * 0.34, size * 0.08);
+    ctx.closePath(); ctx.fill();
+    const cols = ['rgba(240,200,70,0.95)', 'rgba(110,175,230,0.95)', 'rgba(235,130,160,0.95)', 'rgba(150,125,215,0.95)'];
+    for (let i = 0; i < 7; i++) {
+      const ang = -Math.PI / 2 + (i - 3) * 0.3;
+      const r1 = size * 0.42, r2 = r1 + size * (0.2 + (i % 3) * 0.1);
+      const mx = -size * 0.2, my = size * 0.2;
+      ctx.strokeStyle = cols[i % cols.length]; ctx.lineWidth = Math.max(1.2, size * 0.05); ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(mx + Math.cos(ang) * r1, my + Math.sin(ang) * r1);
+      ctx.lineTo(mx + Math.cos(ang) * r2, my + Math.sin(ang) * r2);
+      ctx.stroke();
+      ctx.fillStyle = cols[(i + 1) % cols.length];
+      ctx.beginPath(); ctx.arc(mx + Math.cos(ang) * (r2 + size * 0.07), my + Math.sin(ang) * (r2 + size * 0.07), size * 0.035, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+  // 碗（元宵汤圆 / 腊八粥共用器型，内容与颜色由调用方区分）
+  function bowl(ctx, x, y, w, color) {
+    const h = w * 0.55;
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(x - w / 2, y);
+    ctx.quadraticCurveTo(x - w * 0.42, y + h, x, y + h);
+    ctx.quadraticCurveTo(x + w * 0.42, y + h, x + w / 2, y);
+    ctx.closePath(); ctx.fill();
+    ctx.fillRect(x - w * 0.14, y + h - 1, w * 0.28, h * 0.14);
+    ctx.fillStyle = 'rgba(255,255,255,0.75)';
+    ctx.beginPath(); ctx.ellipse(x, y, w / 2, w * 0.085, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  // 热气：两缕上升波纹
+  function steam(ctx, x, y, h, color = 'rgba(150,160,180,0.8)', a = 1) {
+    ctx.save(); ctx.globalAlpha *= a; ctx.strokeStyle = color; ctx.lineCap = 'round';
+    ctx.lineWidth = Math.max(1.2, h * 0.09);
+    for (const dx of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(x + dx * h * 0.22, y);
+      ctx.bezierCurveTo(x + dx * h * 0.02, y - h * 0.35, x + dx * h * 0.42, y - h * 0.6, x + dx * h * 0.16, y - h);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  // 饺子（冬至）：月牙身 + 上弧褶边（25% 透明度下用较深奶黄 + 描边保证可见）
+  function dumpling(ctx, x, y, w, rot = 0) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+    ctx.fillStyle = 'rgba(230,205,150,0.98)';
+    ctx.strokeStyle = 'rgba(170,140,90,0.9)';
+    ctx.lineWidth = Math.max(1.2, w * 0.035);
+    ctx.beginPath();
+    ctx.moveTo(-w / 2, 0);
+    ctx.quadraticCurveTo(0, -w * 0.62, w / 2, 0);
+    ctx.quadraticCurveTo(0, w * 0.3, -w / 2, 0);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.strokeStyle = 'rgba(170,140,95,0.8)'; ctx.lineWidth = Math.max(1, w * 0.03); ctx.lineCap = 'round';
+    for (let i = 1; i < 6; i++) {
+      const t = i / 6, px = -w / 2 + w * t;
+      const py = -Math.sin(t * Math.PI) * w * 0.31 * 0.8; // 二次曲线顶点是控制点偏移的一半
+      ctx.beginPath(); ctx.moveTo(px, py + w * 0.015); ctx.lineTo(px, py + w * 0.1); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  // 雪人（大雪）：蓝灰描边双球 + 红围巾 + 桶帽 + 树枝手
+  function snowman(ctx, x, y, h) {
+    ctx.save();
+    const r1 = h * 0.2, r2 = h * 0.3;
+    const cy2 = y - r2, cy1 = cy2 - r2 - r1 * 0.85;
+    ctx.fillStyle = 'rgba(205,224,242,0.95)';
+    ctx.strokeStyle = 'rgba(110,150,195,0.95)'; ctx.lineWidth = Math.max(1.6, h * 0.022);
+    for (const [cy, r] of [[cy2, r2], [cy1, r1]]) {
+      ctx.beginPath(); ctx.arc(x, cy, r, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+    }
+    ctx.strokeStyle = 'rgba(110,80,55,0.9)'; ctx.lineWidth = Math.max(1.4, h * 0.018); ctx.lineCap = 'round';
+    for (const dx of [-1, 1]) { // 树枝手
+      ctx.beginPath();
+      ctx.moveTo(x + dx * r2 * 0.9, cy2 - r2 * 0.15);
+      ctx.lineTo(x + dx * r2 * 1.6, cy2 - r2 * 0.55);
+      ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(200,80,60,0.95)'; // 围巾
+    roundRectPath(ctx, x - r1 * 1.1, cy1 + r1 * 0.72, r1 * 2.2, r1 * 0.42, r1 * 0.2); ctx.fill();
+    ctx.fillRect(x + r1 * 0.2, cy1 + r1 * 0.95, r1 * 0.4, r1 * 0.7);
+    ctx.fillStyle = 'rgba(90,110,140,0.95)'; // 桶帽
+    ctx.fillRect(x - r1 * 0.85, cy1 - r1 * 1.5, r1 * 1.7, r1 * 0.22);
+    ctx.fillRect(x - r1 * 0.58, cy1 - r1 * 2.05, r1 * 1.16, r1 * 0.62);
+    ctx.fillStyle = '#e0884a'; // 胡萝卜鼻
+    ctx.beginPath();
+    ctx.moveTo(x, cy1); ctx.lineTo(x + r1 * 0.75, cy1 + r1 * 0.12); ctx.lineTo(x, cy1 + r1 * 0.18);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(60,55,60,0.95)';
+    for (const dx of [-0.42, 0.42]) {
+      ctx.beginPath(); ctx.arc(x + dx * r1, cy1 - r1 * 0.25, r1 * 0.1, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+  // 手套（立冬）：连指毛线手套 + 罗纹袖口 + 雪花纹
+  function mitten(ctx, x, y, h, rot = 0) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+    const w = h * 0.62;
+    ctx.fillStyle = 'rgba(205,115,90,0.95)';
+    roundRectPath(ctx, -w / 2, -h * 0.5, w, h * 0.82, w * 0.42); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(w * 0.42, h * 0.06, w * 0.26, h * 0.2, 0.7, 0, Math.PI * 2); ctx.fill(); // 拇指
+    ctx.fillStyle = 'rgba(170,90,70,0.95)'; // 袖口
+    roundRectPath(ctx, -w * 0.55, h * 0.28, w * 1.1, h * 0.22, h * 0.05); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.75)'; ctx.lineWidth = Math.max(1.2, h * 0.02);
+    for (const yy of [h * 0.32, h * 0.4]) {
+      ctx.beginPath(); ctx.moveTo(-w * 0.55, yy); ctx.lineTo(w * 0.55, yy); ctx.stroke();
+    }
+    flake(ctx, 0, -h * 0.12, h * 0.14, 'rgba(255,255,255,0.85)');
+    ctx.restore();
+  }
+  // 火炬（青年节）：火苗 + 碗托 + 手柄
+  function torch(ctx, x, y, h) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(235,150,60,0.95)';
+    ctx.beginPath();
+    ctx.moveTo(x, y - h * 0.52);
+    ctx.quadraticCurveTo(x + h * 0.17, y - h * 0.28, x, y - h * 0.1);
+    ctx.quadraticCurveTo(x - h * 0.17, y - h * 0.28, x, y - h * 0.52);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(245,205,90,0.95)';
+    ctx.beginPath(); ctx.ellipse(x, y - h * 0.25, h * 0.07, h * 0.1, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(190,125,60,0.95)';
+    ctx.beginPath();
+    ctx.moveTo(x - h * 0.13, y - h * 0.1); ctx.lineTo(x + h * 0.13, y - h * 0.1);
+    ctx.lineTo(x + h * 0.06, y - h * 0.01); ctx.lineTo(x - h * 0.06, y - h * 0.01);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(160,100,55,0.95)';
+    roundRectPath(ctx, x - h * 0.05, y - h * 0.01, h * 0.1, h * 0.48, h * 0.045); ctx.fill();
+    ctx.restore();
+  }
+  // 扳手（劳动节）：斜杆 + 开口扳手头
+  function wrench(ctx, x, y, len, rot, color) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+    ctx.strokeStyle = color; ctx.lineWidth = Math.max(2, len * 0.1); ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-len * 0.38, len * 0.38); ctx.lineTo(len * 0.24, -len * 0.24); ctx.stroke();
+    ctx.lineWidth = Math.max(2, len * 0.085);
+    ctx.beginPath(); ctx.arc(len * 0.33, -len * 0.33, len * 0.15, Math.PI * 0.2, Math.PI * 1.3); ctx.stroke();
+    ctx.restore();
+  }
+  // 锤子（劳动节）：斜柄 + 横锤头
+  function hammer(ctx, x, y, len, rot, color) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+    ctx.strokeStyle = color; ctx.lineWidth = Math.max(2, len * 0.085); ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-len * 0.32, len * 0.32); ctx.lineTo(len * 0.24, -len * 0.24); ctx.stroke();
+    ctx.fillStyle = color;
+    roundRectPath(ctx, len * 0.1, -len * 0.46, len * 0.46, len * 0.19, len * 0.05); ctx.fill();
+    ctx.restore();
+  }
+  // 打开的书本（教师节）：双页展开 + 中缝 + 页线
+  function openBook(ctx, x, y, w) {
+    ctx.save();
+    const h = w * 0.34;
+    ctx.strokeStyle = 'rgba(105,135,185,0.95)'; ctx.fillStyle = 'rgba(160,185,220,0.4)';
+    ctx.lineWidth = Math.max(1.6, w * 0.025); ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x, y - h * 0.12);
+    ctx.quadraticCurveTo(x - w * 0.25, y - h * 0.5, x - w * 0.5, y - h * 0.34);
+    ctx.lineTo(x - w * 0.5, y + h * 0.34);
+    ctx.quadraticCurveTo(x - w * 0.25, y + h * 0.18, x, y + h * 0.32);
+    ctx.quadraticCurveTo(x + w * 0.25, y + h * 0.18, x + w * 0.5, y + h * 0.34);
+    ctx.lineTo(x + w * 0.5, y - h * 0.34);
+    ctx.quadraticCurveTo(x + w * 0.25, y - h * 0.5, x, y - h * 0.12);
+    ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x, y - h * 0.12); ctx.lineTo(x, y + h * 0.32); ctx.stroke();
+    ctx.lineWidth = Math.max(1, w * 0.014);
+    for (const [sx, k] of [[-1, 0.68], [1, 0.68]]) {
+      for (let i = 0; i < 3; i++) {
+        const yy = y - h * 0.05 + i * h * 0.16;
+        ctx.beginPath();
+        ctx.moveTo(x + sx * w * 0.05, yy);
+        ctx.quadraticCurveTo(x + sx * w * 0.25, yy - h * 0.08, x + sx * w * k, yy - h * 0.12);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+  // 铅笔（教师节配笔）：笔杆 + 笔尖 + 橡皮头
+  function pencil(ctx, x, y, len, rot) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+    ctx.fillStyle = 'rgba(225,160,80,0.95)';
+    ctx.fillRect(-len * 0.4, -len * 0.055, len * 0.62, len * 0.11);
+    ctx.fillStyle = 'rgba(215,185,145,0.95)';
+    ctx.beginPath();
+    ctx.moveTo(len * 0.22, -len * 0.055); ctx.lineTo(len * 0.36, 0); ctx.lineTo(len * 0.22, len * 0.055);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(140,145,160,0.95)';
+    ctx.fillRect(-len * 0.47, -len * 0.055, len * 0.07, len * 0.11);
+    ctx.restore();
+  }
+  // 花束（妇女节）：锥形包装 + 三枝花
+  function bouquet(ctx, x, y, size) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(195,145,200,0.6)';
+    ctx.beginPath();
+    ctx.moveTo(x, y + size * 0.5);
+    ctx.lineTo(x - size * 0.3, y - size * 0.08);
+    ctx.lineTo(x + size * 0.3, y - size * 0.08);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(95,140,95,0.9)'; ctx.lineWidth = Math.max(1.4, size * 0.03); ctx.lineCap = 'round';
+    for (const dx of [-0.16, 0, 0.16]) {
+      ctx.beginPath(); ctx.moveTo(x + dx * size * 0.5, y - size * 0.06);
+      ctx.quadraticCurveTo(x + dx * size, y - size * 0.28, x + dx * size * 1.3, y - size * 0.42);
+      ctx.stroke();
+    }
+    blossom(ctx, x - size * 0.2, y - size * 0.46, size * 0.13, '#e88ab0', '#fff');
+    blossom(ctx, x + size * 0.2, y - size * 0.43, size * 0.13, '#f0b0c8', '#fff');
+    blossom(ctx, x, y - size * 0.56, size * 0.15, '#d86a98', '#fff');
+    ctx.restore();
+  }
+  // 康乃馨（母亲节）：锯齿花瓣 + 弧线纹
+  function carnation(ctx, x, y, r, color = 'rgba(222,118,150,0.95)', a = 1) {
+    ctx.save(); ctx.globalAlpha *= a;
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    const n = 12;
+    for (let i = 0; i <= n; i++) {
+      const ang = -Math.PI / 2 + (i / n) * Math.PI * 2;
+      const rr = (i % 2 ? 0.6 : 1) * r;
+      const vx = x + Math.cos(ang) * rr, vy = y + Math.sin(ang) * rr;
+      if (i === 0) ctx.moveTo(vx, vy); else ctx.lineTo(vx, vy);
+    }
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(255,255,255,0.5)'; ctx.lineWidth = Math.max(1, r * 0.06); ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x, y + r * 0.78); ctx.quadraticCurveTo(x - r * 0.32, y + r * 0.05, x - r * 0.12, y - r * 0.5); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x, y + r * 0.78); ctx.quadraticCurveTo(x + r * 0.3, y + r * 0.1, x + r * 0.16, y - r * 0.4); ctx.stroke();
+    ctx.restore();
+  }
+  // 菊花（重阳）：16 条细长放射瓣
+  function chrysanth(ctx, x, y, r, a = 1) {
+    ctx.save(); ctx.globalAlpha *= a;
+    ctx.fillStyle = 'rgba(226,155,70,0.95)';
+    for (let i = 0; i < 16; i++) {
+      const ang = (i / 16) * Math.PI * 2;
+      ctx.save(); ctx.translate(x, y); ctx.rotate(ang);
+      ctx.beginPath(); ctx.ellipse(r * 0.55, 0, r * 0.48, r * 0.085, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
+    }
+    ctx.fillStyle = 'rgba(180,110,40,0.95)';
+    ctx.beginPath(); ctx.arc(x, y, r * 0.22, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  // 紫荆花（香港回归）：5 片尖端开缺的长瓣
+  function bauhinia(ctx, x, y, r, a = 1) {
+    ctx.save(); ctx.globalAlpha *= a;
+    ctx.fillStyle = 'rgba(198,105,205,0.95)';
+    for (let i = 0; i < 5; i++) {
+      const ang = -Math.PI / 2 + (i / 5) * Math.PI * 2;
+      ctx.save(); ctx.translate(x, y); ctx.rotate(ang);
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.quadraticCurveTo(r * 0.34, -r * 0.5, r * 0.13, -r);
+      ctx.lineTo(r * 0.03, -r * 0.8);
+      ctx.lineTo(0, -r * 0.97);
+      ctx.lineTo(-r * 0.03, -r * 0.8);
+      ctx.lineTo(-r * 0.13, -r);
+      ctx.quadraticCurveTo(-r * 0.34, -r * 0.5, 0, 0);
+      ctx.fill();
+      ctx.restore();
+    }
+    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+    for (let i = 0; i < 5; i++) {
+      const ang = -Math.PI / 2 + (i / 5) * Math.PI * 2 + Math.PI / 5;
+      ctx.beginPath(); ctx.arc(x + Math.cos(ang) * r * 0.16, y + Math.sin(ang) * r * 0.16, r * 0.045, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+  // 莲花（澳门回归）：外层五瓣 + 内层三瓣的尖瓣花
+  function lotusFlower(ctx, x, y, r, a = 1) {
+    ctx.save(); ctx.globalAlpha *= a;
+    const fan = (cy, pr, n, spread, tint) => {
+      ctx.fillStyle = tint;
+      for (let i = 0; i < n; i++) {
+        const ang = -Math.PI / 2 + (i - (n - 1) / 2) * spread;
+        ctx.save(); ctx.translate(x, cy); ctx.rotate(ang);
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.quadraticCurveTo(pr * 0.32, -pr * 0.55, 0, -pr);
+        ctx.quadraticCurveTo(-pr * 0.32, -pr * 0.55, 0, 0);
+        ctx.fill();
+        ctx.restore();
+      }
+    };
+    fan(y, r, 5, 0.5, 'rgba(238,175,195,0.95)');
+    fan(y + r * 0.14, r * 0.7, 3, 0.55, 'rgba(245,200,215,0.95)');
+    ctx.fillStyle = 'rgba(225,190,120,0.95)';
+    ctx.beginPath(); ctx.ellipse(x, y + r * 0.2, r * 0.12, r * 0.05, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  // 粽子（端午）：三角身 + 亮叶尖 + 两道绑绳
+  function zongzi(ctx, x, y, size, rot = 0) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+    ctx.fillStyle = 'rgba(115,168,90,0.95)';
+    ctx.beginPath();
+    ctx.moveTo(0, -size * 0.55);
+    ctx.lineTo(size * 0.5, size * 0.32);
+    ctx.lineTo(-size * 0.5, size * 0.32);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(150,195,115,0.95)';
+    ctx.beginPath();
+    ctx.moveTo(0, -size * 0.55);
+    ctx.lineTo(size * 0.17, -size * 0.12);
+    ctx.lineTo(-size * 0.17, -size * 0.12);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(232,200,120,0.95)'; ctx.lineWidth = Math.max(1.4, size * 0.045); ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(-size * 0.35, size * 0.04); ctx.lineTo(size * 0.35, size * 0.04); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(-size * 0.2, size * 0.23); ctx.lineTo(size * 0.2, size * 0.23); ctx.stroke();
+    ctx.restore();
+  }
+  // 玉米（感恩节）：果穗网格粒 + 两侧苞叶
+  function corn(ctx, x, y, h, rot = 0) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+    ctx.fillStyle = 'rgba(150,175,90,0.9)';
+    ctx.beginPath(); ctx.ellipse(-h * 0.17, h * 0.12, h * 0.15, h * 0.4, 0.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(h * 0.17, h * 0.12, h * 0.15, h * 0.4, -0.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(230,180,80,0.95)';
+    ctx.beginPath(); ctx.ellipse(0, -h * 0.06, h * 0.17, h * 0.4, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.save();
+    ctx.beginPath(); ctx.ellipse(0, -h * 0.06, h * 0.17, h * 0.4, 0, 0, Math.PI * 2); ctx.clip();
+    ctx.strokeStyle = 'rgba(160,110,40,0.55)'; ctx.lineWidth = Math.max(1, h * 0.014);
+    for (let i = -2; i <= 2; i++) {
+      ctx.beginPath(); ctx.moveTo(i * h * 0.09, -h * 0.46); ctx.quadraticCurveTo(i * h * 0.11, -h * 0.06, i * h * 0.06, h * 0.34); ctx.stroke();
+    }
+    for (let j = -2; j <= 2; j++) {
+      const yy = -h * 0.06 + j * h * 0.15;
+      ctx.beginPath(); ctx.moveTo(-h * 0.17, yy); ctx.lineTo(h * 0.17, yy); ctx.stroke();
+    }
+    ctx.restore();
+    ctx.restore();
+  }
+  // 糖葫芦（小年北）：竹签串五颗山楂 + 糖衣高光
+  function hawthorn(ctx, x, y, h, rot = 0) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+    ctx.strokeStyle = 'rgba(150,110,70,0.9)'; ctx.lineWidth = Math.max(1.4, h * 0.025); ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(0, h * 0.55); ctx.lineTo(0, -h * 0.52); ctx.stroke();
+    for (let i = 0; i < 5; i++) {
+      const yy = h * 0.38 - i * h * 0.19;
+      ctx.fillStyle = i === 0 ? 'rgba(226,92,72,0.95)' : 'rgba(208,68,58,0.95)';
+      ctx.beginPath(); ctx.arc(0, yy, h * 0.088, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.55)';
+      ctx.beginPath(); ctx.ellipse(-h * 0.026, yy - h * 0.03, h * 0.026, h * 0.014, -0.6, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+  // 螺丝钉（学雷锋）：钉头 + 螺纹杆 + 钉尖
+  function screw(ctx, x, y, h, rot = 0) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+    ctx.fillStyle = 'rgba(158,172,188,0.95)';
+    ctx.beginPath(); ctx.ellipse(0, -h * 0.42, h * 0.17, h * 0.075, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillRect(-h * 0.13, -h * 0.42, h * 0.26, h * 0.1);
+    ctx.fillRect(-h * 0.07, -h * 0.34, h * 0.14, h * 0.7);
+    ctx.strokeStyle = 'rgba(80,95,112,0.85)'; ctx.lineWidth = Math.max(1.2, h * 0.028);
+    for (let i = 0; i < 5; i++) {
+      const yy = -h * 0.25 + i * h * 0.125;
+      ctx.beginPath(); ctx.moveTo(-h * 0.07, yy); ctx.lineTo(h * 0.07, yy + h * 0.035); ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(158,172,188,0.95)';
+    ctx.beginPath();
+    ctx.moveTo(-h * 0.07, h * 0.36); ctx.lineTo(h * 0.07, h * 0.36); ctx.lineTo(0, h * 0.5);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+  // 雨伞（防灾减灾）：三段波浪伞缘 + 弯柄
+  function umbrella(ctx, x, y, w, a = 1) {
+    ctx.save(); ctx.globalAlpha *= a;
+    ctx.fillStyle = 'rgba(100,132,170,0.95)';
+    ctx.beginPath();
+    ctx.moveTo(x - w / 2, y);
+    ctx.quadraticCurveTo(x - w * 0.25, y - w * 0.56, x, y - w * 0.56);
+    ctx.quadraticCurveTo(x + w * 0.25, y - w * 0.56, x + w / 2, y);
+    ctx.arc(x + w / 3, y, w / 6, 0, Math.PI);
+    ctx.arc(x, y, w / 6, 0, Math.PI);
+    ctx.arc(x - w / 3, y, w / 6, 0, Math.PI);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(75,90,110,0.9)'; ctx.lineWidth = Math.max(1.4, w * 0.032); ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x, y + w * 0.04); ctx.lineTo(x, y + w * 0.4);
+    ctx.arc(x - w * 0.075, y + w * 0.4, w * 0.075, 0, Math.PI); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x, y - w * 0.56); ctx.lineTo(x, y - w * 0.63); ctx.stroke();
+    ctx.restore();
+  }
+  // 警钟（七七事变）：钟身 + 钟口沿 + 钟舌
+  function bell(ctx, x, y, h, a = 1) {
+    ctx.save(); ctx.globalAlpha *= a;
+    ctx.fillStyle = 'rgba(172,136,74,0.95)';
+    ctx.beginPath();
+    ctx.moveTo(x - h * 0.3, y + h * 0.18);
+    ctx.quadraticCurveTo(x - h * 0.3, y - h * 0.25, x - h * 0.08, y - h * 0.32);
+    ctx.quadraticCurveTo(x - h * 0.08, y - h * 0.44, x, y - h * 0.44);
+    ctx.quadraticCurveTo(x + h * 0.08, y - h * 0.44, x + h * 0.08, y - h * 0.32);
+    ctx.quadraticCurveTo(x + h * 0.3, y - h * 0.25, x + h * 0.3, y + h * 0.18);
+    ctx.closePath(); ctx.fill();
+    ctx.fillRect(x - h * 0.35, y + h * 0.16, h * 0.7, h * 0.08);
+    ctx.beginPath(); ctx.arc(x, y + h * 0.32, h * 0.06, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.beginPath(); ctx.ellipse(x - h * 0.1, y - h * 0.02, h * 0.05, h * 0.14, 0.1, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  // 日历页（九一八）：挂环 + 红色顶栏（月份）+ 大号日期
+  function calendar(ctx, x, y, w, mon = '9', day = '18') {
+    ctx.save();
+    const h = w * 0.98;
+    ctx.fillStyle = 'rgba(238,228,212,0.98)';
+    roundRectPath(ctx, x - w / 2, y - h / 2, w, h, w * 0.09); ctx.fill();
+    ctx.strokeStyle = 'rgba(150,125,100,0.8)'; ctx.lineWidth = Math.max(1.2, w * 0.025); ctx.stroke();
+    ctx.fillStyle = 'rgba(178,60,50,0.95)';
+    roundRectPath(ctx, x - w / 2, y - h / 2, w, h * 0.26, w * 0.09); ctx.fill();
+    ctx.fillRect(x - w / 2, y - h * 0.37, w, h * 0.025);
+    ctx.strokeStyle = 'rgba(100,105,115,0.9)'; ctx.lineWidth = Math.max(1.4, w * 0.045); ctx.lineCap = 'round';
+    for (const dx of [-w * 0.24, w * 0.24]) {
+      ctx.beginPath(); ctx.arc(x + dx, y - h * 0.5, w * 0.06, Math.PI, 0); ctx.stroke();
+    }
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(250,240,230,0.95)';
+    ctx.font = `700 ${Math.round(w * 0.19)}px "PingFang SC", "Microsoft YaHei", sans-serif`;
+    ctx.fillText(mon, x, y - h * 0.37);
+    ctx.fillStyle = 'rgba(160,55,45,0.95)';
+    ctx.font = `700 ${Math.round(w * 0.42)}px Georgia, "Times New Roman", serif`;
+    ctx.fillText(day, x, y + h * 0.16);
+    ctx.restore();
+  }
+  // 纪念碑（烈士纪念日）：方尖碑 + 两层基座
+  function obelisk(ctx, x, y, h, a = 1) {
+    ctx.save(); ctx.globalAlpha *= a;
+    ctx.fillStyle = 'rgba(150,158,168,0.95)';
+    ctx.beginPath();
+    ctx.moveTo(x - h * 0.09, y);
+    ctx.lineTo(x - h * 0.055, y - h * 0.78);
+    ctx.lineTo(x, y - h * 0.92);
+    ctx.lineTo(x + h * 0.055, y - h * 0.78);
+    ctx.lineTo(x + h * 0.09, y);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
+    ctx.beginPath();
+    ctx.moveTo(x - h * 0.028, y); ctx.lineTo(x - h * 0.018, y - h * 0.72);
+    ctx.lineTo(x, y - h * 0.72); ctx.lineTo(x - h * 0.008, y);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(122,130,140,0.95)';
+    ctx.fillRect(x - h * 0.14, y, h * 0.28, h * 0.07);
+    ctx.fillRect(x - h * 0.2, y + h * 0.07, h * 0.4, h * 0.06);
+    ctx.restore();
+  }
+  // 和平鸽（国家公祭日）：展翅剪影
+  function dove(ctx, x, y, size, rot = 0, a = 1) {
+    ctx.save(); ctx.globalAlpha *= a; ctx.translate(x, y); ctx.rotate(rot);
+    ctx.fillStyle = 'rgba(160,175,195,0.95)';
+    ctx.beginPath();
+    ctx.moveTo(-size * 0.5, size * 0.1);
+    ctx.quadraticCurveTo(-size * 0.1, -size * 0.05, size * 0.1, -size * 0.02);
+    ctx.quadraticCurveTo(size * 0.05, -size * 0.44, size * 0.3, -size * 0.52);
+    ctx.quadraticCurveTo(size * 0.2, -size * 0.2, size * 0.42, -size * 0.1);
+    ctx.quadraticCurveTo(size * 0.52, -size * 0.06, size * 0.5, size * 0.02);
+    ctx.lineTo(size * 0.56, -size * 0.05);
+    ctx.quadraticCurveTo(size * 0.45, size * 0.12, size * 0.1, size * 0.2);
+    ctx.quadraticCurveTo(-size * 0.2, size * 0.24, -size * 0.5, size * 0.1);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(110,125,145,0.9)';
+    ctx.beginPath(); ctx.arc(size * 0.36, -size * 0.08, size * 0.025, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  // 勋章（抗战胜利）：双色绶带 + 金圆牌 + 五角星
+  function medal(ctx, x, y, r, a = 1) {
+    ctx.save(); ctx.globalAlpha *= a;
+    ctx.fillStyle = 'rgba(200,70,60,0.9)';
+    ctx.beginPath();
+    ctx.moveTo(x - r * 0.5, y - r * 1.5);
+    ctx.lineTo(x - r * 0.1, y - r * 1.5);
+    ctx.lineTo(x + r * 0.15, y - r * 0.55);
+    ctx.lineTo(x - r * 0.3, y - r * 0.45);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(226,158,70,0.9)';
+    ctx.beginPath();
+    ctx.moveTo(x + r * 0.1, y - r * 1.5);
+    ctx.lineTo(x + r * 0.5, y - r * 1.5);
+    ctx.lineTo(x + r * 0.3, y - r * 0.45);
+    ctx.lineTo(x - r * 0.05, y - r * 0.55);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(222,172,82,0.95)';
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(185,128,52,0.95)';
+    ctx.beginPath(); ctx.arc(x, y, r * 0.78, 0, Math.PI * 2); ctx.fill();
+    star5(ctx, x, y + r * 0.04, r * 0.55, '#f0d090');
+    ctx.restore();
+  }
+  // 盾牌 + 军星（建军节）
+  function shieldStar(ctx, x, y, w, h) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(88,116,92,0.95)';
+    ctx.beginPath();
+    ctx.moveTo(x - w / 2, y - h / 2);
+    ctx.lineTo(x + w / 2, y - h / 2);
+    ctx.lineTo(x + w / 2, y + h * 0.1);
+    ctx.quadraticCurveTo(x + w / 2, y + h * 0.38, x, y + h / 2);
+    ctx.quadraticCurveTo(x - w / 2, y + h * 0.38, x - w / 2, y + h * 0.1);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(228,218,190,0.85)'; ctx.lineWidth = Math.max(1.5, w * 0.035);
+    ctx.stroke();
+    star5(ctx, x, y - h * 0.06, w * 0.3, '#e04a3a');
+    ctx.restore();
+  }
+  // 柿子（霜降）：扁圆果 + 四片柿蒂
+  function persimmon(ctx, x, y, r) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(222,118,58,0.95)';
+    ctx.beginPath(); ctx.ellipse(x, y + r * 0.12, r, r * 0.8, 0, 0, Math.PI * 2); ctx.fill();
+    for (let i = 0; i < 4; i++) {
+      const ang = -Math.PI / 2 + (i - 1.5) * 0.55;
+      leaf(ctx, x + Math.cos(ang) * r * 0.26, y - r * 0.58 + Math.sin(ang) * r * 0.1, r * 0.42, ang + Math.PI / 2, 'rgba(95,132,72,0.95)');
+    }
+    ctx.strokeStyle = 'rgba(95,115,62,0.9)'; ctx.lineWidth = Math.max(1.2, r * 0.08); ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x, y - r * 0.66); ctx.lineTo(x + r * 0.07, y - r * 0.95); ctx.stroke();
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.beginPath(); ctx.ellipse(x - r * 0.35, y - r * 0.12, r * 0.16, r * 0.22, -0.5, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  // 处暑鸭：浮水鸭身 + 翘尾 + 嘴眼 + 水波
+  function duck(ctx, x, y, size) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(238,200,115,0.95)';
+    ctx.beginPath(); ctx.ellipse(x, y, size * 0.46, size * 0.3, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(x - size * 0.38, y - size * 0.06);
+    ctx.quadraticCurveTo(x - size * 0.62, y - size * 0.28, x - size * 0.5, y - size * 0.34);
+    ctx.quadraticCurveTo(x - size * 0.46, y - size * 0.14, x - size * 0.34, y - size * 0.02);
+    ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.arc(x + size * 0.3, y - size * 0.32, size * 0.19, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(222,132,72,0.95)';
+    ctx.beginPath();
+    ctx.moveTo(x + size * 0.46, y - size * 0.36);
+    ctx.quadraticCurveTo(x + size * 0.64, y - size * 0.3, x + size * 0.46, y - size * 0.24);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(60,52,44,0.9)';
+    ctx.beginPath(); ctx.arc(x + size * 0.35, y - size * 0.38, size * 0.03, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(128,168,190,0.75)'; ctx.lineWidth = Math.max(1.2, size * 0.03); ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x - size * 0.5, y + size * 0.4);
+    ctx.quadraticCurveTo(x - size * 0.15, y + size * 0.3, x + size * 0.1, y + size * 0.4); ctx.stroke();
+    ctx.restore();
+  }
+  // 瓢虫（惊蛰）：红鞘翅中线斑点 + 黑头触角
+  function ladybug(ctx, x, y, r, rot = 0) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+    ctx.fillStyle = 'rgba(214,78,58,0.95)';
+    ctx.beginPath(); ctx.ellipse(0, 0, r * 0.78, r, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.save();
+    ctx.beginPath(); ctx.ellipse(0, 0, r * 0.78, r, 0, 0, Math.PI * 2); ctx.clip();
+    ctx.strokeStyle = 'rgba(62,44,42,0.88)'; ctx.lineWidth = Math.max(1.2, r * 0.09);
+    ctx.beginPath(); ctx.moveTo(0, -r); ctx.lineTo(0, r); ctx.stroke();
+    ctx.fillStyle = 'rgba(62,44,42,0.88)';
+    for (const [px, py, pr] of [[-0.35, -0.25, 0.11], [0.32, -0.4, 0.09], [-0.3, 0.32, 0.1], [0.35, 0.24, 0.09]]) {
+      ctx.beginPath(); ctx.arc(px * r, py * r, pr * r, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+    ctx.fillStyle = 'rgba(58,46,44,0.95)';
+    ctx.beginPath(); ctx.arc(0, -r * 0.92, r * 0.3, 0, Math.PI * 2); ctx.fill();
+    ctx.strokeStyle = 'rgba(58,46,44,0.9)'; ctx.lineWidth = Math.max(1, r * 0.05); ctx.lineCap = 'round';
+    for (const dx of [-1, 1]) {
+      ctx.beginPath();
+      ctx.moveTo(dx * r * 0.1, -r * 1.12);
+      ctx.quadraticCurveTo(dx * r * 0.3, -r * 1.34, dx * r * 0.46, -r * 1.28);
+      ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+    ctx.beginPath(); ctx.ellipse(-r * 0.26, -r * 0.35, r * 0.12, r * 0.2, -0.5, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  // 茶芽（谷雨）：一芽两叶
+  function teaShoot(ctx, x, y, size, rot = 0) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+    ctx.strokeStyle = 'rgba(92,132,88,0.9)'; ctx.lineWidth = Math.max(1.2, size * 0.055); ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(0, size * 0.5); ctx.lineTo(0, -size * 0.28); ctx.stroke();
+    leaf(ctx, 0, size * 0.16, size * 0.42, -Math.PI / 2 - 0.55, 'rgba(112,156,106,0.92)');
+    leaf(ctx, 0, size * 0.02, size * 0.42, -Math.PI / 2 + 0.55, 'rgba(132,176,122,0.92)');
+    ctx.fillStyle = 'rgba(152,192,140,0.95)';
+    ctx.beginPath(); ctx.ellipse(0, -size * 0.38, size * 0.09, size * 0.17, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  // 樱桃（立夏）：双果 + 双梗 + 叶
+  function cherry(ctx, x, y, r) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(92,130,80,0.9)'; ctx.lineWidth = Math.max(1.4, r * 0.11); ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x - r * 0.5, y - r * 0.4); ctx.quadraticCurveTo(x - r * 0.2, y - r * 1.1, x + r * 0.1, y - r * 1.25); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x + r * 0.66, y - r * 0.3); ctx.quadraticCurveTo(x + r * 0.4, y - r * 1.0, x + r * 0.1, y - r * 1.25); ctx.stroke();
+    leaf(ctx, x + r * 0.1, y - r * 1.25, r * 0.62, -0.5, 'rgba(95,142,88,0.92)');
+    ctx.fillStyle = 'rgba(208,58,70,0.95)';
+    ctx.beginPath(); ctx.arc(x - r * 0.5, y + r * 0.1, r * 0.55, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(224,80,88,0.95)';
+    ctx.beginPath(); ctx.arc(x + r * 0.66, y + r * 0.22, r * 0.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.45)';
+    ctx.beginPath(); ctx.ellipse(x - r * 0.68, y - r * 0.05, r * 0.12, r * 0.18, -0.5, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  // 梅枝（小寒）：S 形老枝 + 分枝 + 三朵梅
+  function plumBranch(ctx, x, y, size, rot = 0) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+    ctx.strokeStyle = 'rgba(122,92,70,0.95)'; ctx.lineWidth = Math.max(2, size * 0.055); ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(0, size * 0.4);
+    ctx.quadraticCurveTo(size * 0.3, size * 0.12, size * 0.55, -size * 0.05);
+    ctx.quadraticCurveTo(size * 0.8, -size * 0.2, size * 0.95, -size * 0.42);
+    ctx.stroke();
+    ctx.lineWidth = Math.max(1.4, size * 0.032);
+    ctx.beginPath(); ctx.moveTo(size * 0.5, -size * 0.03);
+    ctx.quadraticCurveTo(size * 0.46, -size * 0.24, size * 0.3, -size * 0.38);
+    ctx.stroke();
+    blossom(ctx, size * 0.95, -size * 0.48, size * 0.14, '#e891a5', '#c86a80');
+    blossom(ctx, size * 0.3, -size * 0.44, size * 0.11, '#eeb0bd', '#c86a80');
+    blossom(ctx, size * 0.62, -size * 0.1, size * 0.1, '#e891a5', '#c86a80');
+    ctx.restore();
+  }
+  // 冰凌（大寒）：冰檐 + 五根垂挂冰柱
+  function icicles(ctx, x, y, w) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(165,198,226,0.95)';
+    roundRectPath(ctx, x - w / 2, y - w * 0.08, w, w * 0.1, w * 0.045); ctx.fill();
+    const lens = [0.5, 0.28, 0.42, 0.22, 0.36];
+    for (let i = 0; i < 5; i++) {
+      const px = x - w * 0.38 + i * w * 0.19;
+      const len = w * lens[i];
+      ctx.fillStyle = 'rgba(185,212,238,0.95)';
+      ctx.beginPath();
+      ctx.moveTo(px - w * 0.05, y);
+      ctx.lineTo(px + w * 0.05, y);
+      ctx.lineTo(px, y + len);
+      ctx.closePath(); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+      ctx.beginPath(); ctx.ellipse(px - w * 0.014, y + len * 0.35, w * 0.011, len * 0.22, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+  // 稻穗（秋分）：弯垂穗轴 + 交替谷粒
+  function riceEar(ctx, x, y, len, rot = 0) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+    ctx.strokeStyle = 'rgba(178,148,70,0.9)'; ctx.lineWidth = Math.max(1.4, len * 0.04); ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(0, 0);
+    ctx.quadraticCurveTo(len * 0.12, -len * 0.55, len * 0.5, -len * 0.78);
+    ctx.stroke();
+    const q = (t) => {
+      const u = 1 - t;
+      return [2 * u * t * (len * 0.12) + t * t * (len * 0.5), 2 * u * t * (-len * 0.55) + t * t * (-len * 0.78)];
+    };
+    ctx.fillStyle = 'rgba(214,176,86,0.95)';
+    for (let i = 0; i < 8; i++) {
+      const t = 0.3 + (i / 7) * 0.7;
+      const [px, py] = q(t);
+      const side = i % 2 ? 1 : -1;
+      ctx.beginPath(); ctx.ellipse(px + side * len * 0.05, py, len * 0.042, len * 0.072, side * 0.6, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+  // 雁阵（寒露）：人字形五雁
+  function geese(ctx, x, y, size) {
+    ctx.save();
+    ctx.strokeStyle = 'rgba(118,128,150,0.92)'; ctx.lineWidth = Math.max(1.6, size * 0.045); ctx.lineCap = 'round';
+    for (const [bx, by, sc] of [[0, 0, 1], [-0.42, 0.26, 0.85], [0.42, 0.26, 0.85], [-0.8, 0.52, 0.68], [0.8, 0.52, 0.68]]) {
+      const r = size * 0.2 * sc;
+      const cx2 = x + bx * size, cy2 = y + by * size;
+      ctx.beginPath();
+      ctx.moveTo(cx2 - r, cy2 + r * 0.45);
+      ctx.quadraticCurveTo(cx2 - r * 0.25, cy2 - r * 0.55, cx2, cy2);
+      ctx.quadraticCurveTo(cx2 + r * 0.25, cy2 - r * 0.55, cx2 + r, cy2 + r * 0.45);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+  // 荷塘（小暑）：缺口荷叶 + 叶脉 + 侧位花苞
+  function lotusPond(ctx, x, y, r) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(92,158,110,0.9)';
+    ctx.beginPath();
+    ctx.moveTo(x, y);
+    ctx.arc(x, y, r, 0.3, Math.PI * 2 - 0.12);
+    ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = 'rgba(62,120,82,0.7)'; ctx.lineWidth = Math.max(1, r * 0.045); ctx.lineCap = 'round';
+    for (let i = 0; i < 5; i++) {
+      const ang = 0.65 + i * 1.05;
+      ctx.beginPath(); ctx.moveTo(x, y);
+      ctx.lineTo(x + Math.cos(ang) * r * 0.82, y + Math.sin(ang) * r * 0.82);
+      ctx.stroke();
+    }
+    ctx.strokeStyle = 'rgba(92,148,100,0.9)'; ctx.lineWidth = Math.max(1.4, r * 0.07);
+    ctx.beginPath(); ctx.moveTo(x + r * 0.95, y - r * 0.2); ctx.quadraticCurveTo(x + r * 1.15, y - r * 0.75, x + r * 1.12, y - r * 1.05); ctx.stroke();
+    ctx.fillStyle = 'rgba(232,148,172,0.95)';
+    ctx.beginPath(); ctx.ellipse(x + r * 1.12, y - r * 1.2, r * 0.2, r * 0.34, 0.25, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  // 西瓜瓣（大暑）：平底朝上半圆三层 + 籽
+  function watermelon(ctx, x, y, r, rot = 0) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+    ctx.fillStyle = 'rgba(72,140,82,0.95)';
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(238,238,222,0.95)';
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.84, 0, Math.PI); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(232,92,82,0.95)';
+    ctx.beginPath(); ctx.arc(0, 0, r * 0.7, 0, Math.PI); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = 'rgba(66,50,44,0.9)';
+    for (const [sx, sy] of [[-0.36, 0.3], [0, 0.45], [0.36, 0.3], [-0.16, 0.14], [0.18, 0.14]]) {
+      ctx.beginPath(); ctx.ellipse(sx * r, sy * r, r * 0.045, r * 0.07, 0.4, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.restore();
+  }
+  // 麦镰（芒种）：金麦穗 + 弧刃镰刀木柄
+  function sickleWheat(ctx, x, y, size) {
+    ctx.save();
+    wheat(ctx, x - size * 0.18, y + size * 0.38, size * 0.6, 0.12, 'rgba(196,164,80,0.95)');
+    ctx.strokeStyle = 'rgba(142,152,168,0.95)'; ctx.lineWidth = Math.max(2, size * 0.06); ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x + size * 0.42, y + size * 0.42);
+    ctx.quadraticCurveTo(x + size * 0.12, y + size * 0.1, x + size * 0.26, y - size * 0.3);
+    ctx.quadraticCurveTo(x + size * 0.34, y - size * 0.46, x + size * 0.5, y - size * 0.44);
+    ctx.stroke();
+    ctx.strokeStyle = 'rgba(162,120,80,0.95)'; ctx.lineWidth = Math.max(2.4, size * 0.085);
+    ctx.beginPath(); ctx.moveTo(x + size * 0.42, y + size * 0.42); ctx.lineTo(x + size * 0.54, y + size * 0.58); ctx.stroke();
+    ctx.restore();
+  }
+  // 燕子（清明）：剪式双翼 + 分叉尾
+  function swallow(ctx, x, y, size, rot = 0) {
+    ctx.save(); ctx.translate(x, y); ctx.rotate(rot);
+    ctx.fillStyle = 'rgba(72,88,112,0.92)';
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.quadraticCurveTo(-size * 0.2, -size * 0.35, -size * 0.55, -size * 0.4);
+    ctx.quadraticCurveTo(-size * 0.25, -size * 0.05, -size * 0.3, size * 0.16);
+    ctx.quadraticCurveTo(0, size * 0.06, size * 0.3, size * 0.16);
+    ctx.quadraticCurveTo(size * 0.25, -size * 0.05, size * 0.55, -size * 0.4);
+    ctx.quadraticCurveTo(size * 0.2, -size * 0.35, 0, 0);
+    ctx.closePath(); ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(0, size * 0.02);
+    ctx.lineTo(-size * 0.18, size * 0.5);
+    ctx.lineTo(-size * 0.02, size * 0.28);
+    ctx.lineTo(size * 0.02, size * 0.28);
+    ctx.lineTo(size * 0.18, size * 0.5);
+    ctx.closePath(); ctx.fill();
+    ctx.restore();
+  }
+
+  // ----- 二十四节气主题：每个节气独立渐变配色 + 独有主图案（种子取节气下标，重绘稳定）-----
+  // kind 即各节气专属图案：小寒梅枝 | 大寒冰凌 | 立春嫩芽 | 雨水云雨 | 惊蛰瓢虫 | 春分花瓣
+  // 清明燕风筝 | 谷雨茶芽 | 立夏樱桃 | 小满青麦 | 芒种麦镰 | 夏至烈日 | 小暑荷塘 | 大暑西瓜
+  // 立秋落叶 | 处暑鸭 | 白露露珠 | 秋分稻穗 | 寒露雁阵 | 霜降柿子 | 立冬手套 | 小雪雪花
+  // 大雪雪人 | 冬至饺子 —— 每个节气 big 独一无二，不再共用
   const TERM_STYLE = [
-    ['#dbe7f2', '#f5f9fc', 'plum'],  ['#d8e6f0', '#f4f8fb', 'plum'],
-    ['#dff0e2', '#f6fbf6', 'sprout'], ['#d5e9f2', '#f3f9fc', 'rain'],
-    ['#e0f0dd', '#f7fcf4', 'sprout'], ['#fde9ef', '#fff8fa', 'petal'],
-    ['#e2ead9', '#f8faf4', 'qingming'], ['#dcefe0', '#f7fcf8', 'rain'],
-    ['#dcf0d9', '#f7fdf5', 'leaf'],  ['#f4ecc9', '#fdfaf0', 'wheat'],
-    ['#f0e6bd', '#fcf9ef', 'wheat'], ['#fdeebe', '#fffbf0', 'sun'],
-    ['#fbe3c0', '#fef9f2', 'sun'],   ['#fbdcb4', '#fef8f0', 'sun'],
-    ['#f6e8c8', '#fdf9f0', 'leaf'],  ['#f5dfb6', '#fdf7ec', 'leaf'],
-    ['#e3eef0', '#f8fcfd', 'dew'],   ['#f6e3c0', '#fdf8ee', 'leaf'],
-    ['#f0dcc8', '#fbf4ee', 'dew'],   ['#f2e0d0', '#fcf6f1', 'frost'],
-    ['#e0e8ee', '#f7fafc', 'snow'],  ['#dfe8ef', '#f6fafc', 'snow'],
-    ['#d7e3ee', '#f4f8fb', 'snow'],  ['#dde7f0', '#f6f9fc', 'snow'],
+    ['#dbe7f2', '#f5f9fc', 'plumbranch'], ['#d8e6f0', '#f4f8fb', 'ice'],
+    ['#dff0e2', '#f6fbf6', 'sprout'],     ['#d5e9f2', '#f3f9fc', 'rain'],
+    ['#e0f0dd', '#f7fcf4', 'ladybug'],    ['#fde9ef', '#fff8fa', 'petal'],
+    ['#e2ead9', '#f8faf4', 'kite'],       ['#dcefe0', '#f7fcf8', 'tea'],
+    ['#dcf0d9', '#f7fdf5', 'cherry'],     ['#f4ecc9', '#fdfaf0', 'wheat'],
+    ['#f0e6bd', '#fcf9ef', 'harvest'],    ['#fdeebe', '#fffbf0', 'sun'],
+    ['#fbe3c0', '#fef9f2', 'lotus'],      ['#fbdcb4', '#fef8f0', 'melon'],
+    ['#f6e8c8', '#fdf9f0', 'leaf'],       ['#f5dfb6', '#fdf7ec', 'duck'],
+    ['#e3eef0', '#f8fcfd', 'dew'],        ['#f6e3c0', '#fdf8ee', 'rice'],
+    ['#f0dcc8', '#fbf4ee', 'geese'],      ['#f2e0d0', '#fcf6f1', 'persimmon'],
+    ['#e0e8ee', '#f7fafc', 'mitten'],     ['#dfe8ef', '#f6fafc', 'snow'],
+    ['#d7e3ee', '#f4f8fb', 'snowman'],    ['#dde7f0', '#f6f9fc', 'dumpling'],
   ];
   const SEASON_DECO = {
-    plum(ctx, x0, y0, w, h, s, seed) {
+    plumbranch(ctx, x0, y0, w, h, s, seed) {
       const b = Math.min(w, h) * s;
-      blossom(ctx, x0 + w - b * 0.08, y0 + b * 0.09, b * 0.045, '#f2a7b3');
-      blossom(ctx, x0 + w - b * 0.16, y0 + b * 0.15, b * 0.03, '#ee97a5', '#fff', 0.8);
-      blossom(ctx, x0 + b * 0.07, y0 + h - b * 0.08, b * 0.038, '#f2a7b3', '#fff', 0.9);
-      cornerScatter(ctx, x0, y0, w, h, 6, seed, (c, x, y, rng) => petal(c, x, y, b * 0.012, rng() * Math.PI, 'rgba(242,167,179,0.6)'));
-      cornerScatter(ctx, x0, y0, w, h, 5, seed + 1, (c, x, y, rng) => flake(c, x, y, b * 0.02, 'rgba(122,160,199,0.55)'));
+      blossom(ctx, x0 + w - b * 0.08, y0 + b * 0.09, b * 0.042, '#f2a7b3');
+      blossom(ctx, x0 + b * 0.07, y0 + h - b * 0.08, b * 0.036, '#f2a7b3', '#fff', 0.9);
+      cornerScatter(ctx, x0, y0, w, h, 6, seed, (c, x, y, rng) => petal(c, x, y, b * 0.011, rng() * Math.PI, 'rgba(242,167,179,0.55)'));
+    },
+    ice(ctx, x0, y0, w, h, s, seed) {
+      const b = Math.min(w, h) * s;
+      icicles(ctx, x0 + w - b * 0.14, y0 + b * 0.045, b * 0.14);
+      cornerScatter(ctx, x0, y0, w, h, 6, seed, (c, x, y, rng) => flake(c, x, y, b * (0.012 + rng() * 0.012), 'rgba(127,168,217,0.6)'));
     },
     sprout(ctx, x0, y0, w, h, s, seed) {
       const b = Math.min(w, h) * s;
@@ -711,17 +1478,60 @@
       cloud(ctx, x0 + b * 0.09, y0 + h - b * 0.06, b * 0.1, 'rgba(151,180,203,0.35)');
       cornerScatter(ctx, x0, y0, w, h, 10, seed, (c, x, y, rng) => raindrop(c, x, y, b * (0.02 + rng() * 0.02), 'rgba(111,168,201,0.6)'));
     },
+    ladybug(ctx, x0, y0, w, h, s, seed) {
+      const b = Math.min(w, h) * s;
+      ladybug(ctx, x0 + w - b * 0.08, y0 + b * 0.09, b * 0.026, 0.4);
+      sprout(ctx, x0 + b * 0.07, y0 + h - b * 0.07, b * 0.055, 'rgba(124,184,124,0.85)');
+      cornerScatter(ctx, x0, y0, w, h, 5, seed, (c, x, y, rng) => petal(c, x, y, b * 0.01, rng() * Math.PI, 'rgba(160,205,160,0.5)'));
+    },
     petal(ctx, x0, y0, w, h, s, seed) {
       const b = Math.min(w, h) * s;
       cornerScatter(ctx, x0, y0, w, h, 12, seed, (c, x, y, rng) => petal(c, x, y, b * (0.012 + rng() * 0.012), rng() * Math.PI, rng() > 0.4 ? 'rgba(244,167,191,0.7)' : 'rgba(250,205,220,0.6)'));
       blossom(ctx, x0 + w - b * 0.07, y0 + b * 0.07, b * 0.035, '#f4a7bf', '#fff', 0.85);
     },
-    qingming(ctx, x0, y0, w, h, s, seed) {
+    kite(ctx, x0, y0, w, h, s, seed) {
       const b = Math.min(w, h) * s;
-      cloud(ctx, x0 + w - b * 0.1, y0 + b * 0.07, b * 0.12, 'rgba(150,168,150,0.45)');
-      cornerScatter(ctx, x0, y0, w, h, 8, seed, (c, x, y, rng) => raindrop(c, x, y, b * (0.018 + rng() * 0.018), 'rgba(122,160,145,0.55)'));
-      leaf(ctx, x0 + b * 0.06, y0 + h - b * 0.07, b * 0.09, -0.7, 'rgba(139,170,120,0.7)');
-      leaf(ctx, x0 + b * 0.12, y0 + h - b * 0.05, b * 0.07, -1.2, 'rgba(139,170,120,0.5)');
+      swallow(ctx, x0 + w - b * 0.1, y0 + b * 0.09, b * 0.06, 0.15);
+      cloud(ctx, x0 + b * 0.09, y0 + h - b * 0.07, b * 0.1, 'rgba(150,168,150,0.4)');
+      cornerScatter(ctx, x0, y0, w, h, 7, seed, (c, x, y, rng) => raindrop(c, x, y, b * (0.014 + rng() * 0.014), 'rgba(122,160,145,0.5)'));
+    },
+    tea(ctx, x0, y0, w, h, s, seed) {
+      const b = Math.min(w, h) * s;
+      teaShoot(ctx, x0 + w - b * 0.08, y0 + b * 0.1, b * 0.09);
+      cornerScatter(ctx, x0, y0, w, h, 7, seed, (c, x, y, rng) => raindrop(c, x, y, b * (0.014 + rng() * 0.016), 'rgba(111,168,201,0.55)'));
+    },
+    cherry(ctx, x0, y0, w, h, s, seed) {
+      const b = Math.min(w, h) * s;
+      cherry(ctx, x0 + w - b * 0.09, y0 + b * 0.11, b * 0.032);
+      cornerScatter(ctx, x0, y0, w, h, 6, seed, (c, x, y, rng) => petal(c, x, y, b * 0.01, rng() * Math.PI, 'rgba(240,170,180,0.5)'));
+    },
+    wheat(ctx, x0, y0, w, h, s, seed) {
+      const b = Math.min(w, h) * s;
+      wheat(ctx, x0 + w - b * 0.07, y0 + b * 0.1, b * 0.11, 0.5, 'rgba(150,185,110,0.75)');
+      wheat(ctx, x0 + b * 0.08, y0 + h - b * 0.08, b * 0.09, -2.4, 'rgba(150,185,110,0.6)');
+      cornerScatter(ctx, x0, y0, w, h, 6, seed, (c, x, y, rng) => petal(c, x, y, b * 0.01, rng() * Math.PI, 'rgba(180,200,130,0.5)'));
+    },
+    harvest(ctx, x0, y0, w, h, s, seed) {
+      const b = Math.min(w, h) * s;
+      wheat(ctx, x0 + w - b * 0.07, y0 + b * 0.1, b * 0.11, 0.5, 'rgba(196,164,80,0.75)');
+      wheat(ctx, x0 + b * 0.08, y0 + h - b * 0.08, b * 0.09, -2.4, 'rgba(196,164,80,0.6)');
+      cornerScatter(ctx, x0, y0, w, h, 6, seed, (c, x, y, rng) => petal(c, x, y, b * 0.01, rng() * Math.PI, 'rgba(214,188,110,0.5)'));
+    },
+    sun(ctx, x0, y0, w, h, s, seed) {
+      const b = Math.min(w, h) * s;
+      sunDeco(ctx, x0 + w - b * 0.07, y0 + b * 0.08, b * 0.06, '#f7c46b');
+      cornerScatter(ctx, x0, y0, w, h, 5, seed, (c, x, y, rng) => star4(c, x, y, b * 0.008, 'rgba(247,196,107,0.7)'));
+    },
+    lotus(ctx, x0, y0, w, h, s, seed) {
+      const b = Math.min(w, h) * s;
+      leaf(ctx, x0 + w - b * 0.09, y0 + b * 0.09, b * 0.09, 0.7, 'rgba(110,165,120,0.7)');
+      blossom(ctx, x0 + b * 0.07, y0 + h - b * 0.08, b * 0.032, 'rgba(235,150,175,0.85)');
+      cornerScatter(ctx, x0, y0, w, h, 5, seed, (c, x, y, rng) => petal(c, x, y, b * 0.01, rng() * Math.PI, 'rgba(150,190,160,0.45)'));
+    },
+    melon(ctx, x0, y0, w, h, s, seed) {
+      const b = Math.min(w, h) * s;
+      watermelon(ctx, x0 + w - b * 0.09, y0 + b * 0.085, b * 0.035);
+      cornerScatter(ctx, x0, y0, w, h, 5, seed, (c, x, y, rng) => star4(c, x, y, b * 0.007, 'rgba(247,196,107,0.7)'));
     },
     leaf(ctx, x0, y0, w, h, s, seed) {
       const b = Math.min(w, h) * s;
@@ -729,16 +1539,10 @@
       cornerScatter(ctx, x0, y0, w, h, 10, seed, (c, x, y, rng) => leaf(c, x, y, b * (0.035 + rng() * 0.03), rng() * Math.PI * 2, cols[Math.floor(rng() * cols.length)]));
       leaf(ctx, x0 + w - b * 0.09, y0 + b * 0.08, b * 0.06, 0.8, 'rgba(224,146,73,0.8)');
     },
-    wheat(ctx, x0, y0, w, h, s, seed) {
+    duck(ctx, x0, y0, w, h, s, seed) {
       const b = Math.min(w, h) * s;
-      wheat(ctx, x0 + w - b * 0.07, y0 + b * 0.1, b * 0.11, 0.5, 'rgba(196,164,80,0.75)');
-      wheat(ctx, x0 + b * 0.08, y0 + h - b * 0.08, b * 0.09, -2.4, 'rgba(196,164,80,0.6)');
-      cornerScatter(ctx, x0, y0, w, h, 6, seed, (c, x, y, rng) => petal(c, x, y, b * 0.01, rng() * Math.PI, 'rgba(214,188,110,0.55)'));
-    },
-    sun(ctx, x0, y0, w, h, s, seed) {
-      const b = Math.min(w, h) * s;
-      sunDeco(ctx, x0 + w - b * 0.07, y0 + b * 0.08, b * 0.06, '#f7c46b');
-      cornerScatter(ctx, x0, y0, w, h, 5, seed, (c, x, y, rng) => star4(c, x, y, b * 0.008, 'rgba(247,196,107,0.7)'));
+      duck(ctx, x0 + b * 0.1, y0 + h - b * 0.1, b * 0.07);
+      cornerScatter(ctx, x0, y0, w, h, 5, seed, (c, x, y, rng) => petal(c, x, y, b * 0.01, rng() * Math.PI, 'rgba(240,205,120,0.5)'));
     },
     dew(ctx, x0, y0, w, h, s, seed) {
       const b = Math.min(w, h) * s;
@@ -751,11 +1555,26 @@
       });
       leaf(ctx, x0 + w - b * 0.09, y0 + b * 0.08, b * 0.08, 0.7, 'rgba(150,185,160,0.6)');
     },
-    frost(ctx, x0, y0, w, h, s, seed) {
+    rice(ctx, x0, y0, w, h, s, seed) {
       const b = Math.min(w, h) * s;
-      cornerScatter(ctx, x0, y0, w, h, 14, seed, (c, x, y, rng) => star4(c, x, y, b * (0.004 + rng() * 0.006), 'rgba(255,255,255,0.9)', 0.9));
-      leaf(ctx, x0 + w - b * 0.09, y0 + b * 0.08, b * 0.07, 0.9, 'rgba(205,140,90,0.65)');
-      flake(ctx, x0 + b * 0.07, y0 + h - b * 0.07, b * 0.02, 'rgba(255,255,255,0.8)');
+      riceEar(ctx, x0 + w - b * 0.08, y0 + b * 0.22, b * 0.11, 0.35);
+      cornerScatter(ctx, x0, y0, w, h, 6, seed, (c, x, y, rng) => petal(c, x, y, b * 0.01, rng() * Math.PI, 'rgba(214,188,110,0.5)'));
+    },
+    geese(ctx, x0, y0, w, h, s, seed) {
+      const b = Math.min(w, h) * s;
+      geese(ctx, x0 + w - b * 0.18, y0 + b * 0.08, b * 0.14);
+      cornerScatter(ctx, x0, y0, w, h, 5, seed, (c, x, y, rng) => star4(c, x, y, b * 0.006, 'rgba(150,160,180,0.6)'));
+    },
+    persimmon(ctx, x0, y0, w, h, s, seed) {
+      const b = Math.min(w, h) * s;
+      persimmon(ctx, x0 + w - b * 0.09, y0 + b * 0.11, b * 0.032);
+      leaf(ctx, x0 + b * 0.07, y0 + h - b * 0.08, b * 0.06, -0.8, 'rgba(200,120,70,0.6)');
+      cornerScatter(ctx, x0, y0, w, h, 5, seed, (c, x, y, rng) => leaf(c, x, y, b * 0.025, rng() * Math.PI * 2, 'rgba(200,120,70,0.5)'));
+    },
+    mitten(ctx, x0, y0, w, h, s, seed) {
+      const b = Math.min(w, h) * s;
+      mitten(ctx, x0 + w - b * 0.09, y0 + b * 0.09, b * 0.07, 0.3);
+      cornerScatter(ctx, x0, y0, w, h, 6, seed, (c, x, y, rng) => flake(c, x, y, b * (0.012 + rng() * 0.012), 'rgba(127,168,217,0.55)'));
     },
     snow(ctx, x0, y0, w, h, s, seed, dens = 1) {
       const b = Math.min(w, h) * s;
@@ -766,13 +1585,28 @@
         c.beginPath(); c.arc(x, y, b * (0.003 + rng() * 0.004), 0, Math.PI * 2); c.fill(); c.restore();
       });
     },
+    snowman(ctx, x0, y0, w, h, s, seed) {
+      const b = Math.min(w, h) * s;
+      snowman(ctx, x0 + w - b * 0.09, y0 + b * 0.12, b * 0.09);
+      cornerScatter(ctx, x0, y0, w, h, 6, seed, (c, x, y, rng) => flake(c, x, y, b * (0.012 + rng() * 0.012), 'rgba(127,168,217,0.6)'));
+    },
+    dumpling(ctx, x0, y0, w, h, s, seed) {
+      const b = Math.min(w, h) * s;
+      dumpling(ctx, x0 + w - b * 0.09, y0 + b * 0.08, b * 0.06, -0.15);
+      dumpling(ctx, x0 + b * 0.08, y0 + h - b * 0.08, b * 0.05, 0.2);
+      cornerScatter(ctx, x0, y0, w, h, 5, seed, (c, x, y, rng) => star4(c, x, y, b * 0.006, 'rgba(210,180,120,0.6)'));
+    },
   };
-  // 大图标（≥画面宽度 1/4，压白卡半透明展示）：节气按装饰种类共用一套
+  // 大图标（≥画面宽度 1/4，压白卡半透明展示）：24 节气逐一独有图案
   const TERM_BIG = {
-    plum(ctx, x0, y0, w) {
+    plumbranch(ctx, x0, y0, w) {
       const u = w;
-      blossom(ctx, x0 + u * 0.84, y0 + u * 0.16, u * 0.115, '#e891a5', '#e06a88');
-      blossom(ctx, x0 + u * 0.7, y0 + u * 0.3, u * 0.07, '#eeb0bd', '#e06a88');
+      plumBranch(ctx, x0 + u * 0.36, y0 + u * 0.56, u * 0.55);
+    },
+    ice(ctx, x0, y0, w) {
+      const u = w;
+      icicles(ctx, x0 + u * 0.83, y0 + u * 0.03, u * 0.3);
+      flake(ctx, x0 + u * 0.65, y0 + u * 0.16, u * 0.07, 'rgba(127,168,217,0.85)');
     },
     sprout(ctx, x0, y0, w) {
       const u = w;
@@ -782,53 +1616,119 @@
     rain(ctx, x0, y0, w) {
       const u = w;
       cloud(ctx, x0 + u * 0.83, y0 + u * 0.15, u * 0.3, 'rgba(120,155,190,0.95)');
+      raindrop(ctx, x0 + u * 0.75, y0 + u * 0.26, u * 0.08, 'rgba(110,150,190,0.9)');
+      raindrop(ctx, x0 + u * 0.86, y0 + u * 0.28, u * 0.06, 'rgba(110,150,190,0.75)');
+    },
+    ladybug(ctx, x0, y0, w) {
+      const u = w;
+      ladybug(ctx, x0 + u * 0.84, y0 + u * 0.19, u * 0.11, 0.4);
+      sprout(ctx, x0 + u * 0.64, y0 + u * 0.33, u * 0.15, '#7cb87c');
     },
     petal(ctx, x0, y0, w) {
       const u = w;
       blossom(ctx, x0 + u * 0.84, y0 + u * 0.16, u * 0.115, '#ec8fae', '#e06a92');
       blossom(ctx, x0 + u * 0.7, y0 + u * 0.3, u * 0.07, '#f5b8cb', '#e06a92');
     },
-    qingming(ctx, x0, y0, w) {
+    kite(ctx, x0, y0, w) {
       const u = w;
-      cloud(ctx, x0 + u * 0.83, y0 + u * 0.14, u * 0.26, 'rgba(130,150,130,0.95)');
-      leaf(ctx, x0 + u * 0.68, y0 + u * 0.26, u * 0.14, -0.9, 'rgba(110,145,95,0.9)');
+      swallow(ctx, x0 + u * 0.84, y0 + u * 0.15, u * 0.26, 0.15);
+      ctx.save();
+      ctx.strokeStyle = 'rgba(110,125,150,0.7)'; ctx.lineWidth = Math.max(1.2, u * 0.004); ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(x0 + u * 0.81, y0 + u * 0.28);
+      ctx.quadraticCurveTo(x0 + u * 0.73, y0 + u * 0.4, x0 + u * 0.78, y0 + u * 0.55);
+      ctx.stroke();
+      ctx.restore();
+      cloud(ctx, x0 + u * 0.6, y0 + u * 0.42, u * 0.16, 'rgba(150,168,150,0.6)');
+    },
+    tea(ctx, x0, y0, w) {
+      const u = w;
+      teaShoot(ctx, x0 + u * 0.84, y0 + u * 0.2, u * 0.3);
+      raindrop(ctx, x0 + u * 0.64, y0 + u * 0.12, u * 0.05, 'rgba(110,160,200,0.7)');
+    },
+    cherry(ctx, x0, y0, w) {
+      const u = w;
+      cherry(ctx, x0 + u * 0.82, y0 + u * 0.24, u * 0.16);
+    },
+    wheat(ctx, x0, y0, w) {
+      const u = w;
+      wheat(ctx, x0 + u * 0.85, y0 + u * 0.24, u * 0.28, 0.35, 'rgba(115,155,80,0.95)');
+      wheat(ctx, x0 + u * 0.69, y0 + u * 0.12, u * 0.18, -0.4, 'rgba(135,172,95,0.8)');
+    },
+    harvest(ctx, x0, y0, w) {
+      const u = w;
+      sickleWheat(ctx, x0 + u * 0.66, y0 + u * 0.28, u * 0.4);
+    },
+    sun(ctx, x0, y0, w) {
+      const u = w;
+      sunDeco(ctx, x0 + u * 0.85, y0 + u * 0.15, u * 0.125, '#f0b050');
+    },
+    lotus(ctx, x0, y0, w) {
+      const u = w;
+      lotusPond(ctx, x0 + u * 0.74, y0 + u * 0.4, u * 0.17);
+    },
+    melon(ctx, x0, y0, w) {
+      const u = w;
+      watermelon(ctx, x0 + u * 0.84, y0 + u * 0.08, u * 0.17);
     },
     leaf(ctx, x0, y0, w) {
       const u = w;
       leaf(ctx, x0 + u * 0.86, y0 + u * 0.12, u * 0.26, -0.5, 'rgba(217,122,53,0.95)');
       leaf(ctx, x0 + u * 0.71, y0 + u * 0.22, u * 0.16, -1.2, 'rgba(196,150,60,0.8)');
     },
-    wheat(ctx, x0, y0, w) {
+    duck(ctx, x0, y0, w) {
       const u = w;
-      wheat(ctx, x0 + u * 0.85, y0 + u * 0.22, u * 0.28, 0.35, 'rgba(180,145,55,0.95)');
-      wheat(ctx, x0 + u * 0.69, y0 + u * 0.12, u * 0.18, -0.4, 'rgba(180,145,55,0.7)');
-    },
-    sun(ctx, x0, y0, w) {
-      const u = w;
-      sunDeco(ctx, x0 + u * 0.85, y0 + u * 0.15, u * 0.125, '#f0b050');
+      duck(ctx, x0 + u * 0.74, y0 + u * 0.22, u * 0.36);
     },
     dew(ctx, x0, y0, w) {
       const u = w;
-      leaf(ctx, x0 + u * 0.85, y0 + u * 0.14, u * 0.26, -0.6, 'rgba(120,160,135,0.95)');
+      leaf(ctx, x0 + u * 0.86, y0 + u * 0.16, u * 0.26, -0.6, 'rgba(120,160,135,0.95)');
+      ctx.save();
+      ctx.fillStyle = 'rgba(150,200,212,0.95)';
+      ctx.beginPath(); ctx.ellipse(x0 + u * 0.78, y0 + u * 0.09, u * 0.045, u * 0.055, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,0.8)';
+      ctx.beginPath(); ctx.arc(x0 + u * 0.768, y0 + u * 0.075, u * 0.014, 0, Math.PI * 2); ctx.fill();
+      ctx.restore();
     },
-    frost(ctx, x0, y0, w) {
+    rice(ctx, x0, y0, w) {
       const u = w;
-      flake(ctx, x0 + u * 0.84, y0 + u * 0.16, u * 0.13, 'rgba(127,168,217,0.95)');
-      leaf(ctx, x0 + u * 0.67, y0 + u * 0.1, u * 0.12, -1.5, 'rgba(205,140,90,0.85)');
+      riceEar(ctx, x0 + u * 0.72, y0 + u * 0.48, u * 0.44, -0.2);
+    },
+    geese(ctx, x0, y0, w) {
+      const u = w;
+      geese(ctx, x0 + u * 0.7, y0 + u * 0.15, u * 0.42);
+    },
+    persimmon(ctx, x0, y0, w) {
+      const u = w;
+      persimmon(ctx, x0 + u * 0.84, y0 + u * 0.24, u * 0.16);
+      leaf(ctx, x0 + u * 0.62, y0 + u * 0.3, u * 0.12, -1.4, 'rgba(200,120,70,0.8)');
+    },
+    mitten(ctx, x0, y0, w) {
+      const u = w;
+      mitten(ctx, x0 + u * 0.84, y0 + u * 0.2, u * 0.3, 0.3);
+      flake(ctx, x0 + u * 0.63, y0 + u * 0.32, u * 0.06, 'rgba(127,168,217,0.8)');
     },
     snow(ctx, x0, y0, w) {
       const u = w;
       flake(ctx, x0 + u * 0.84, y0 + u * 0.17, u * 0.13, 'rgba(127,168,217,0.95)');
       flake(ctx, x0 + u * 0.65, y0 + u * 0.09, u * 0.07, 'rgba(127,168,217,0.7)');
     },
+    snowman(ctx, x0, y0, w) {
+      const u = w;
+      snowman(ctx, x0 + u * 0.84, y0 + u * 0.44, u * 0.4);
+      flake(ctx, x0 + u * 0.63, y0 + u * 0.1, u * 0.06, 'rgba(127,168,217,0.85)');
+    },
+    dumpling(ctx, x0, y0, w) {
+      const u = w;
+      dumpling(ctx, x0 + u * 0.8, y0 + u * 0.16, u * 0.28, -0.12);
+      dumpling(ctx, x0 + u * 0.6, y0 + u * 0.32, u * 0.19, 0.22);
+    },
   };
   const TERM_THEMES = TERM_NAMES.map((name, i) => ({
     name, isTerm: true, when: { term: i },
     grad: [TERM_STYLE[i][0], TERM_STYLE[i][1]],
     big: TERM_BIG[TERM_STYLE[i][2]],
-    deco: TERM_STYLE[i][2] === 'snow' && i === 22
-      ? (ctx, x0, y0, w, h, s) => SEASON_DECO.snow(ctx, x0, y0, w, h, s, i, 1.8) // 大雪最密
-      : (ctx, x0, y0, w, h, s) => SEASON_DECO[TERM_STYLE[i][2]](ctx, x0, y0, w, h, s, i),
+    deco: (ctx, x0, y0, w, h, s) => SEASON_DECO[TERM_STYLE[i][2]](ctx, x0, y0, w, h, s, i),
   }));
 
   // ----- 节日主题：name 用于设置页预览选择器，isTerm 标记节气分组 -----
@@ -844,9 +1744,9 @@
       },
       big(ctx, x0, y0, w) {
         const u = w;
-        firework(ctx, x0 + u * 0.83, y0 + u * 0.17, u * 0.13, '#f7c445');
-        firework(ctx, x0 + u * 0.64, y0 + u * 0.08, u * 0.07, '#6aa8e8');
-        star4(ctx, x0 + u * 0.71, y0 + u * 0.29, u * 0.02, '#f7c445');
+        popper(ctx, x0 + u * 0.8, y0 + u * 0.24, u * 0.42, -0.15);
+        star4(ctx, x0 + u * 0.64, y0 + u * 0.09, u * 0.03, '#f7c445');
+        star4(ctx, x0 + u * 0.9, y0 + u * 0.07, u * 0.025, '#7ecbff');
       },
     },
     spring: {
@@ -899,8 +1799,15 @@
       },
       big(ctx, x0, y0, w) {
         const u = w;
-        lantern(ctx, x0 + u * 0.85, y0 + u * 0.175, u * 0.26, u * 0.19, '#f0605a');
-        lantern(ctx, x0 + u * 0.685, y0 + u * 0.09, u * 0.12, u * 0.088, '#f08a5a');
+        bowl(ctx, x0 + u * 0.83, y0 + u * 0.26, u * 0.3, '#7aa8d0');
+        ctx.save();
+        ctx.fillStyle = '#efe6d6'; ctx.strokeStyle = 'rgba(180,165,135,0.9)'; ctx.lineWidth = Math.max(1.2, u * 0.006);
+        for (const [bx, by, br] of [[0.76, 0.2, 0.058], [0.87, 0.185, 0.05], [0.815, 0.125, 0.045]]) {
+          ctx.beginPath(); ctx.arc(x0 + u * bx, y0 + u * by, u * br, 0, Math.PI * 2); ctx.fill(); ctx.stroke();
+        }
+        ctx.restore();
+        steam(ctx, x0 + u * 0.9, y0 + u * 0.23, u * 0.08);
+        lantern(ctx, x0 + u * 0.62, y0 + u * 0.09, u * 0.09, u * 0.066, '#f0605a');
       },
     },
     longtaitou: {
@@ -941,8 +1848,7 @@
       },
       big(ctx, x0, y0, w) {
         const u = w;
-        blossom(ctx, x0 + u * 0.84, y0 + u * 0.16, u * 0.115, '#d998e0', '#b06ac8');
-        blossom(ctx, x0 + u * 0.7, y0 + u * 0.3, u * 0.07, '#e5b8ee', '#b06ac8');
+        bouquet(ctx, x0 + u * 0.82, y0 + u * 0.28, u * 0.34);
       },
     },
     arbor: {
@@ -976,13 +1882,14 @@
       name: '劳动节', when: { solar: [5, 1] }, grad: ['#e09b3d', '#f3ce8a'],
       deco(ctx, x0, y0, w, h, s) {
         const b = Math.min(w, h) * s;
-        sunDeco(ctx, x0 + w - b * 0.08, y0 + b * 0.09, b * 0.055, '#f7c46b');
+        wrench(ctx, x0 + w - b * 0.07, y0 + b * 0.07, b * 0.045, Math.PI / 4, 'rgba(255,255,255,0.9)');
         const cols = ['#ffffff', '#f7e6b0', '#e88a5a'];
         cornerScatter(ctx, x0, y0, w, h, 8, 15, (c, x, y, rng) => confetti(c, x, y, b * (0.013 + rng() * 0.01), rng() * Math.PI, cols[Math.floor(rng() * cols.length)], 0.8));
       },
       big(ctx, x0, y0, w) {
         const u = w;
-        sunDeco(ctx, x0 + u * 0.85, y0 + u * 0.15, u * 0.125, '#f0b050');
+        wrench(ctx, x0 + u * 0.83, y0 + u * 0.2, u * 0.36, 0, 'rgba(150,160,175,0.95)');
+        hammer(ctx, x0 + u * 0.83, y0 + u * 0.2, u * 0.36, Math.PI / 2, 'rgba(200,120,80,0.95)');
       },
     },
     youth: {
@@ -995,8 +1902,8 @@
       },
       big(ctx, x0, y0, w) {
         const u = w;
-        star4(ctx, x0 + u * 0.84, y0 + u * 0.16, u * 0.13, '#f7c948');
-        star4(ctx, x0 + u * 0.68, y0 + u * 0.28, u * 0.06, '#7fb3e8');
+        torch(ctx, x0 + u * 0.84, y0 + u * 0.2, u * 0.36);
+        star4(ctx, x0 + u * 0.66, y0 + u * 0.12, u * 0.03, '#f7c948');
       },
     },
     nurse: {
@@ -1038,8 +1945,9 @@
       },
       big(ctx, x0, y0, w) {
         const u = w;
-        blossom(ctx, x0 + u * 0.84, y0 + u * 0.16, u * 0.115, '#f09aae', '#e0708a');
-        blossom(ctx, x0 + u * 0.7, y0 + u * 0.3, u * 0.07, '#f5b8c5', '#e0708a');
+        carnation(ctx, x0 + u * 0.84, y0 + u * 0.18, u * 0.14);
+        carnation(ctx, x0 + u * 0.65, y0 + u * 0.31, u * 0.09, 'rgba(238,150,175,0.9)');
+        leaf(ctx, x0 + u * 0.84, y0 + u * 0.36, u * 0.1, Math.PI / 2 + 0.4, 'rgba(120,165,120,0.9)');
       },
     },
     father: {
@@ -1075,8 +1983,8 @@
       },
       big(ctx, x0, y0, w) {
         const u = w;
-        leaf(ctx, x0 + u * 0.86, y0 + u * 0.12, u * 0.26, -0.5, 'rgba(46,120,74,0.95)');
-        leaf(ctx, x0 + u * 0.71, y0 + u * 0.21, u * 0.16, -1.15, 'rgba(46,120,74,0.65)');
+        zongzi(ctx, x0 + u * 0.82, y0 + u * 0.2, u * 0.34, -0.1);
+        leaf(ctx, x0 + u * 0.64, y0 + u * 0.32, u * 0.14, -1.1, 'rgba(46,120,74,0.8)');
       },
     },
     qixi: {
@@ -1096,8 +2004,19 @@
       },
       big(ctx, x0, y0, w) {
         const u = w;
-        heart(ctx, x0 + u * 0.84, y0 + u * 0.17, u * 0.11, '#f08aa8');
-        star4(ctx, x0 + u * 0.67, y0 + u * 0.09, u * 0.05, '#f7c445');
+        // 鹊桥：两颗大星 + 弧形小星链
+        star5(ctx, x0 + u * 0.88, y0 + u * 0.12, u * 0.075, '#f7d774');
+        star5(ctx, x0 + u * 0.58, y0 + u * 0.3, u * 0.05, '#f7d774');
+        ctx.save();
+        ctx.fillStyle = '#e8c9a0';
+        for (let i = 0; i < 5; i++) {
+          const t = (i + 1) / 6;
+          const px = x0 + u * (0.88 + (0.58 - 0.88) * t);
+          const py = y0 + u * (0.12 + (0.3 - 0.12) * t) - Math.sin(t * Math.PI) * u * 0.05;
+          ctx.beginPath(); ctx.arc(px, py, u * 0.016, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.restore();
+        star4(ctx, x0 + u * 0.72, y0 + u * 0.07, u * 0.025, '#ffffff');
       },
     },
     party: {
@@ -1125,8 +2044,8 @@
       },
       big(ctx, x0, y0, w) {
         const u = w;
-        blossom(ctx, x0 + u * 0.84, y0 + u * 0.16, u * 0.115, '#f0c070', '#dd9530');
-        blossom(ctx, x0 + u * 0.7, y0 + u * 0.3, u * 0.07, '#f6d9a5', '#dd9530');
+        openBook(ctx, x0 + u * 0.82, y0 + u * 0.24, u * 0.32);
+        pencil(ctx, x0 + u * 0.85, y0 + u * 0.42, u * 0.2, -0.5);
       },
     },
     army: {
@@ -1139,21 +2058,21 @@
       },
       big(ctx, x0, y0, w) {
         const u = w;
-        star5(ctx, x0 + u * 0.82, y0 + u * 0.19, u * 0.14, '#e04a3a');
+        shieldStar(ctx, x0 + u * 0.83, y0 + u * 0.2, u * 0.26, u * 0.32);
       },
     },
     national: {
       name: '国庆节', when: { solar: [10, 1] }, grad: ['#b01f1f', '#e0663c'],
       deco(ctx, x0, y0, w, h, s) {
         const b = Math.min(w, h) * s;
-        firework(ctx, x0 + w - b * 0.12, y0 + b * 0.11, b * 0.055, 'rgba(255,217,138,0.9)');
-        firework(ctx, x0 + b * 0.1, y0 + h - b * 0.1, b * 0.042, 'rgba(255,217,138,0.7)');
+        flag(ctx, x0 + w - b * 0.13, y0 + b * 0.04, b * 0.09, b * 0.06);
         cornerScatter(ctx, x0, y0, w, h, 8, 23, (c, x, y, rng) => star4(c, x, y, b * (0.006 + rng() * 0.008), '#ffd98a', 0.9));
+        star5(ctx, x0 + b * 0.09, y0 + h - b * 0.09, b * 0.02, 'rgba(255,217,138,0.85)');
       },
       big(ctx, x0, y0, w) {
         const u = w;
-        firework(ctx, x0 + u * 0.83, y0 + u * 0.17, u * 0.13, '#f7c445');
-        firework(ctx, x0 + u * 0.64, y0 + u * 0.08, u * 0.07, '#f09a5a');
+        flag(ctx, x0 + u * 0.72, y0 + u * 0.06, u * 0.26, u * 0.2);
+        star5(ctx, x0 + u * 0.65, y0 + u * 0.32, u * 0.05, '#f0c060');
       },
     },
     midautumn: {
@@ -1181,8 +2100,8 @@
       },
       big(ctx, x0, y0, w) {
         const u = w;
-        blossom(ctx, x0 + u * 0.84, y0 + u * 0.16, u * 0.115, '#eda05a', '#d67f35');
-        leaf(ctx, x0 + u * 0.69, y0 + u * 0.29, u * 0.1, -1.5, 'rgba(196,110,60,0.8)');
+        chrysanth(ctx, x0 + u * 0.83, y0 + u * 0.19, u * 0.15);
+        leaf(ctx, x0 + u * 0.64, y0 + u * 0.32, u * 0.12, -1.5, 'rgba(150,160,90,0.9)');
       },
     },
     halloween: {
@@ -1210,8 +2129,7 @@
       },
       big(ctx, x0, y0, w) {
         const u = w;
-        leaf(ctx, x0 + u * 0.85, y0 + u * 0.13, u * 0.26, -0.5, 'rgba(190,110,50,0.95)');
-        leaf(ctx, x0 + u * 0.7, y0 + u * 0.25, u * 0.16, -1.3, 'rgba(170,125,50,0.85)');
+        corn(ctx, x0 + u * 0.83, y0 + u * 0.2, u * 0.44, 0.35);
       },
     },
     laba: {
@@ -1227,7 +2145,17 @@
       },
       big(ctx, x0, y0, w) {
         const u = w;
-        flake(ctx, x0 + u * 0.84, y0 + u * 0.17, u * 0.13, 'rgba(159,180,204,0.95)');
+        bowl(ctx, x0 + u * 0.83, y0 + u * 0.26, u * 0.3, '#6a4a34');
+        ctx.save();
+        ctx.fillStyle = 'rgba(148,96,58,0.95)';
+        ctx.beginPath(); ctx.ellipse(x0 + u * 0.83, y0 + u * 0.26, u * 0.13, u * 0.038, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = 'rgba(190,70,55,0.95)';
+        for (const [dx, dy] of [[-0.06, 0.002], [0.04, 0.014], [0.1, -0.006]]) {
+          ctx.beginPath(); ctx.arc(x0 + u * (0.83 + dx), y0 + u * (0.258 + dy), u * 0.014, 0, Math.PI * 2); ctx.fill();
+        }
+        ctx.restore();
+        steam(ctx, x0 + u * 0.82, y0 + u * 0.2, u * 0.1);
+        flake(ctx, x0 + u * 0.6, y0 + u * 0.12, u * 0.055, 'rgba(159,180,204,0.85)');
       },
     },
     xiaonianN: {
@@ -1235,13 +2163,13 @@
       deco(ctx, x0, y0, w, h, s) {
         const b = Math.min(w, h) * s;
         lantern(ctx, x0 + w - b * 0.09, y0 + b * 0.12, b * 0.07, b * 0.051);
-        cornerScatter(ctx, x0, y0, w, h, 5, 40, (c, x, y, rng) => sugarBall(c, x, y, b * (0.012 + rng() * 0.008)));
+        hawthorn(ctx, x0 + b * 0.09, y0 + h - b * 0.16, b * 0.09, 0.1);
         cornerScatter(ctx, x0, y0, w, h, 6, 41, (c, x, y, rng) => star4(c, x, y, b * (0.005 + rng() * 0.006), 'rgba(255,235,190,0.8)'));
       },
       big(ctx, x0, y0, w) {
         const u = w;
-        lantern(ctx, x0 + u * 0.84, y0 + u * 0.17, u * 0.23, u * 0.167);
-        sugarBall(ctx, x0 + u * 0.65, y0 + u * 0.31, u * 0.055);
+        hawthorn(ctx, x0 + u * 0.84, y0 + u * 0.27, u * 0.46, 0.1);
+        lantern(ctx, x0 + u * 0.62, y0 + u * 0.12, u * 0.1, u * 0.073, '#f0605a');
       },
     },
     xiaonianS: {
@@ -1310,31 +2238,34 @@
       },
       big(ctx, x0, y0, w) {
         const u = w;
-        heart(ctx, x0 + u * 0.84, y0 + u * 0.17, u * 0.115, '#e0a090');
+        screw(ctx, x0 + u * 0.84, y0 + u * 0.2, u * 0.34, 0.6);
+        star4(ctx, x0 + u * 0.65, y0 + u * 0.12, u * 0.025, 'rgba(255,240,220,0.9)');
       },
     },
     disaster: {
       name: '防灾减灾日', isMemorial: true, when: { solar: [5, 12] }, grad: ['#4a5a6a', '#93a5b5'],
       deco(ctx, x0, y0, w, h, s) {
         const b = Math.min(w, h) * s;
-        cloud(ctx, x0 + w - b * 0.11, y0 + b * 0.09, b * 0.11, 'rgba(255,255,255,0.35)');
+        umbrella(ctx, x0 + w - b * 0.09, y0 + b * 0.08, b * 0.075, 0.9);
         cornerScatter(ctx, x0, y0, w, h, 8, 51, (c, x, y, rng) => raindrop(c, x, y, b * (0.016 + rng() * 0.016), 'rgba(255,255,255,0.4)'));
       },
       big(ctx, x0, y0, w) {
         const u = w;
-        cloud(ctx, x0 + u * 0.83, y0 + u * 0.15, u * 0.28, 'rgba(230,238,245,0.9)');
+        umbrella(ctx, x0 + u * 0.83, y0 + u * 0.16, u * 0.34, 1);
+        raindrop(ctx, x0 + u * 0.66, y0 + u * 0.1, u * 0.05, 'rgba(220,232,245,0.8)');
       },
     },
     qiqi: {
       name: '七七事变纪念日', isMemorial: true, when: { solar: [7, 7] }, grad: ['#26262e', '#5c5c66'],
       deco(ctx, x0, y0, w, h, s) {
         const b = Math.min(w, h) * s;
-        candle(ctx, x0 + b * 0.08, y0 + h - b * 0.11, b * 0.028, b * 0.075, 0.9);
+        bell(ctx, x0 + b * 0.09, y0 + h - b * 0.13, b * 0.06, 0.9);
         cornerScatter(ctx, x0, y0, w, h, 6, 52, (c, x, y, rng) => star4(c, x, y, b * (0.004 + rng() * 0.005), 'rgba(255,240,210,0.5)'));
       },
       big(ctx, x0, y0, w) {
         const u = w;
-        candle(ctx, x0 + u * 0.83, y0 + u * 0.31, u * 0.09, u * 0.26);
+        bell(ctx, x0 + u * 0.84, y0 + u * 0.26, u * 0.4);
+        star4(ctx, x0 + u * 0.65, y0 + u * 0.12, u * 0.02, 'rgba(255,240,210,0.6)');
       },
     },
     hkreturn: {
@@ -1347,8 +2278,7 @@
       },
       big(ctx, x0, y0, w) {
         const u = w;
-        blossom(ctx, x0 + u * 0.84, y0 + u * 0.16, u * 0.115, '#dcaee8', '#a05ab8');
-        blossom(ctx, x0 + u * 0.7, y0 + u * 0.3, u * 0.07, '#ecc8f2', '#a05ab8');
+        bauhinia(ctx, x0 + u * 0.83, y0 + u * 0.2, u * 0.17);
       },
     },
     victory: {
@@ -1360,32 +2290,33 @@
       },
       big(ctx, x0, y0, w) {
         const u = w;
-        star5(ctx, x0 + u * 0.82, y0 + u * 0.19, u * 0.13, 'rgba(240,192,96,0.9)');
+        medal(ctx, x0 + u * 0.84, y0 + u * 0.28, u * 0.13);
       },
     },
     jiuyiba: {
       name: '九一八纪念日', isMemorial: true, when: { solar: [9, 18] }, grad: ['#22262e', '#55606e'],
       deco(ctx, x0, y0, w, h, s) {
         const b = Math.min(w, h) * s;
-        candle(ctx, x0 + b * 0.08, y0 + h - b * 0.11, b * 0.028, b * 0.075, 0.9);
+        calendar(ctx, x0 + b * 0.09, y0 + h - b * 0.11, b * 0.05);
         cornerScatter(ctx, x0, y0, w, h, 6, 55, (c, x, y, rng) => star4(c, x, y, b * (0.004 + rng() * 0.005), 'rgba(255,240,210,0.5)'));
       },
       big(ctx, x0, y0, w) {
         const u = w;
-        candle(ctx, x0 + u * 0.83, y0 + u * 0.31, u * 0.09, u * 0.26);
+        calendar(ctx, x0 + u * 0.83, y0 + u * 0.22, u * 0.28);
+        candle(ctx, x0 + u * 0.62, y0 + u * 0.36, u * 0.055, u * 0.16);
       },
     },
     martyrs: {
       name: '烈士纪念日', isMemorial: true, when: { solar: [9, 30] }, grad: ['#26292b', '#5f6668'],
       deco(ctx, x0, y0, w, h, s) {
         const b = Math.min(w, h) * s;
-        candle(ctx, x0 + b * 0.08, y0 + h - b * 0.11, b * 0.028, b * 0.075, 0.9);
+        obelisk(ctx, x0 + b * 0.09, y0 + h - b * 0.09, b * 0.07, 0.9);
         star5(ctx, x0 + w - b * 0.09, y0 + b * 0.1, b * 0.03, 'rgba(240,192,96,0.6)');
       },
       big(ctx, x0, y0, w) {
         const u = w;
-        candle(ctx, x0 + u * 0.83, y0 + u * 0.31, u * 0.09, u * 0.26);
-        star5(ctx, x0 + u * 0.64, y0 + u * 0.14, u * 0.05, 'rgba(240,192,96,0.8)');
+        obelisk(ctx, x0 + u * 0.84, y0 + u * 0.4, u * 0.42);
+        star5(ctx, x0 + u * 0.63, y0 + u * 0.14, u * 0.05, 'rgba(240,192,96,0.85)');
       },
     },
     gongji: {
@@ -1398,8 +2329,9 @@
       },
       big(ctx, x0, y0, w) {
         const u = w;
-        candle(ctx, x0 + u * 0.82, y0 + u * 0.32, u * 0.095, u * 0.27);
-        candle(ctx, x0 + u * 0.66, y0 + u * 0.3, u * 0.06, u * 0.17);
+        candle(ctx, x0 + u * 0.85, y0 + u * 0.36, u * 0.095, u * 0.27);
+        candle(ctx, x0 + u * 0.71, y0 + u * 0.34, u * 0.06, u * 0.17);
+        dove(ctx, x0 + u * 0.72, y0 + u * 0.14, u * 0.22, 0.1);
       },
     },
     macau: {
@@ -1412,8 +2344,8 @@
       },
       big(ctx, x0, y0, w) {
         const u = w;
-        blossom(ctx, x0 + u * 0.84, y0 + u * 0.16, u * 0.115, '#eef5e8', '#7aa88a');
-        blossom(ctx, x0 + u * 0.7, y0 + u * 0.3, u * 0.07, '#f5f9f0', '#7aa88a');
+        lotusFlower(ctx, x0 + u * 0.83, y0 + u * 0.28, u * 0.18);
+        leaf(ctx, x0 + u * 0.66, y0 + u * 0.36, u * 0.11, -1.6, 'rgba(110,160,120,0.85)');
       },
     },
   };
