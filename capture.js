@@ -227,21 +227,6 @@
         e.preventDefault();
       };
       const onMove = (e) => { if (dragging) draw(e); };
-      const finish = () => {
-        cleanup();
-        // 小于 10 CSS px 视为误点
-        if (rect && rect.w >= 10 && rect.h >= 10) {
-          resolve({
-            x: Math.round(rect.x + window.scrollX),
-            y: Math.round(rect.y + window.scrollY),
-            width: Math.round(rect.w),
-            height: Math.round(rect.h),
-            scale: 1,
-          });
-        } else {
-          resolve(null);
-        }
-      };
       const onUp = () => { if (dragging) finish(); };
       const onKey = (e) => {
         if (e.key === 'Escape') {
@@ -256,6 +241,26 @@
         layer.removeEventListener('pointercancel', onUp);
         window.removeEventListener('keydown', onKey, true);
         layer.remove();
+      }
+      // 等合成器真正绘出「去掉遮罩」的帧再放行：captureVisibleTab 抓的是最近一次合成结果，
+      // 移除遮罩后立刻发消息会在旧帧（还带着灰遮罩）上成像（实测结果图整体发灰）
+      const afterRepaint = () => new Promise((r) =>
+        requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 40))));
+      async function finish() {
+        cleanup();
+        await afterRepaint();
+        // 小于 10 CSS px 视为误点
+        if (rect && rect.w >= 10 && rect.h >= 10) {
+          resolve({
+            x: Math.round(rect.x + window.scrollX),
+            y: Math.round(rect.y + window.scrollY),
+            width: Math.round(rect.w),
+            height: Math.round(rect.h),
+            scale: 1,
+          });
+        } else {
+          resolve(null);
+        }
       }
 
       layer.addEventListener('pointerdown', onDown);
