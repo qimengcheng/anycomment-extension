@@ -3277,11 +3277,18 @@
       // 背景去色程度来自设置项 card_pack_shot_desat（0=原色，100=黑白）
       const desat = Math.min(100, Math.max(0, typeof o.card_pack_shot_desat === 'number' ? o.card_pack_shot_desat : 0)) / 100;
       if (!packCurveLUT) packCurveBuild();
+      // 海报按宽适配、贴顶呈现（截图形状任意：横向与顶部都绝不裁切，花名带永远完整，
+      // 经正片叠底透过截图可见；方形截图露出的背景即花名区域，长条截图花名也完整）。
+      // 海报不足画布高时（极端长竖条）下缘以海报整体平均色延伸（与金句卡片 v1.45 同口径）；
+      // 旧 cover 居中裁剪会把海报顶部烙的花名切成一半
       ctx.save();
       ctx.filter = `saturate(${1 - desat})`;
-      const bs = Math.max(plan.outW / packBg.img.naturalWidth, plan.outH / packBg.img.naturalHeight);
-      const biw = packBg.img.naturalWidth * bs, bih = packBg.img.naturalHeight * bs;
-      ctx.drawImage(packBg.img, (plan.outW - biw) / 2, (plan.outH - bih) / 2, biw, bih);
+      const bs = plan.outW / packBg.img.naturalWidth;
+      const bih = packBg.img.naturalHeight * bs;
+      const dh = Math.min(bih, plan.outH);
+      ctx.fillStyle = imageAvgColor(packBg.img);
+      ctx.fillRect(0, 0, plan.outW, plan.outH);
+      ctx.drawImage(packBg.img, 0, 0, packBg.img.naturalWidth, dh / bs, 0, 0, plan.outW, dh);
       ctx.restore();
       // 色调曲线：暗部墨色笔触压向白色，海报变成浅色纹理纸（此时画布上只有背景，可整幅处理）
       packCurveApply(ctx, plan.outW, plan.outH);
