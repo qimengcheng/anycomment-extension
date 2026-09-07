@@ -233,25 +233,16 @@
       ctx.lineCap = 'round';
       ctx.lineJoin = 'round';
       switch (sh.type) {
-        case 'arrow':
         case 'line': {
           ctx.beginPath();
           ctx.moveTo(sh.x0, sh.y0);
           ctx.lineTo(sh.x1, sh.y1);
           ctx.stroke();
-          if (sh.type === 'arrow') {
-            const a = Math.atan2(sh.y1 - sh.y0, sh.x1 - sh.x0);
-            const len = Math.max(12 * k, w * 3.4);
-            const spread = 0.42;
-            ctx.beginPath();
-            ctx.moveTo(sh.x1, sh.y1);
-            ctx.lineTo(sh.x1 - len * Math.cos(a - spread), sh.y1 - len * Math.sin(a - spread));
-            ctx.lineTo(sh.x1 - len * Math.cos(a + spread), sh.y1 - len * Math.sin(a + spread));
-            ctx.closePath();
-            ctx.fill();
-          }
           break;
         }
+        case 'arrow':
+          paintArrow(sh, k, w);
+          break;
         case 'rect': {
           const x = Math.min(sh.x0, sh.x1);
           const y = Math.min(sh.y0, sh.y1);
@@ -309,6 +300,41 @@
         }
       }
       ctx.restore();
+    }
+
+    // 微信同款箭头：细杆 + 明显外扩的实心三角头，尖端要锐
+    // 关键：杆不能用圆头线帽画到终点（圆帽会把尖头顶钝），三角头单独 fill 出来
+    function paintArrow(sh, k, w) {
+      const dx = sh.x1 - sh.x0;
+      const dy = sh.y1 - sh.y0;
+      const len = Math.hypot(dx, dy);
+      if (len < 0.5) return;
+      const ux = dx / len;
+      const uy = dy / len;
+      const nx = -uy; // 法向
+      const ny = ux;
+      // 头长 ≈ 2.8 倍杆宽、头半宽 ≈ 1.5 倍杆宽（即头宽 ≈ 3 倍杆宽），比老版更"胖"，贴近微信
+      const full = Math.max(9 * k, w * 2.8);
+      const half = Math.max(4.5 * k, w * 1.5);
+      // 拖得太短就同比缩小头部，避免变成一个大脑袋
+      const headLen = Math.min(len, full);
+      const headHalf = half * (headLen / full);
+      // 杆画进三角头里一点，接缝不会露缝；圆头线帽的外扩被三角头完全盖住
+      const tail = len - headLen * 0.9;
+      if (tail > 0.5) {
+        ctx.beginPath();
+        ctx.moveTo(sh.x0, sh.y0);
+        ctx.lineTo(sh.x0 + ux * tail, sh.y0 + uy * tail);
+        ctx.stroke();
+      }
+      const bx = sh.x1 - ux * headLen;
+      const by = sh.y1 - uy * headLen;
+      ctx.beginPath();
+      ctx.moveTo(sh.x1, sh.y1);
+      ctx.lineTo(bx + nx * headHalf, by + ny * headHalf);
+      ctx.lineTo(bx - nx * headHalf, by - ny * headHalf);
+      ctx.closePath();
+      ctx.fill();
     }
 
     // 马赛克：把原图对应区域缩到极小再放大回来（关闭插值 → 色块）
