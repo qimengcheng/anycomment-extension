@@ -107,9 +107,24 @@
           },
         }],
       });
+      recordShotShare(); // 每次截图分享登记一次（登录态），服务端据此发分享积分
     } catch (e) {
       toast('生成截图卡片失败');
     }
+  }
+
+  // 记录截图分享到服务端（登录态）：每天前 10 次每次 +0.5 积分（与划线分享共用额度），发放成功轻提示
+  function recordShotShare() {
+    chrome.storage.local.get({ ac_token: '' }, (r) => {
+      if (!r.ac_token) return; // 未登录不登记，不打扰
+      fetch(SERVER + '/api/screenshot-shares', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + r.ac_token },
+        body: JSON.stringify({ page_url: pageUrl(), page_title: document.title || null }),
+      }).then((res) => (res.ok ? res.json() : null)).then((d) => {
+        if (d && d.rewarded) toast('分享成功，+0.5 积分');
+      }).catch(() => { /* 静默：不影响截图流程 */ });
+    });
   }
 
   function viewportClip() {

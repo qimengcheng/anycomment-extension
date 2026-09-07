@@ -294,8 +294,10 @@
           quote_before: q.before || null,
           quote_after: q.after || null,
         }),
-      }).then((res) => {
-        if (res.ok) paintShareQuote(q);
+      }).then((res) => (res.ok ? res.json() : null)).then((d) => {
+        if (!d) return;
+        if (d.rewarded) showExtToast('分享成功，+0.5 积分');
+        paintShareQuote(q); // 记录成功后给本页文字加虚线
       }).catch(() => { /* 静默：不影响卡片生成 */ });
     });
   }
