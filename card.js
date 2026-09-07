@@ -3452,7 +3452,6 @@
     }
     // 图片可被扩展操作替换（如截图主题包背景快捷开关重合成），复制/下载始终取当前图
     let curUrl = dataUrl;
-    const updateImg = (u) => { curUrl = u; if (anno) anno.setImage(u); else view.src = u; };
     // 有标注就取「底图 + 标注层」的合成图；没标注直接返回原图，省一次大图编码
     const currentUrl = () => (anno ? anno.exportUrl() || curUrl : curUrl);
     const acts = document.createElement('div');
@@ -3483,8 +3482,32 @@
         btnCopy.textContent = '复制失败，请下载';
       }
     });
-    // 标注一改，弹出时自动复制的那张图就过期了，把文案拨回「复制图片」提示重点一次
-    if (anno) anno.onChange(() => { btnCopy.textContent = '复制图片'; });
+    // 自动复制：截图界面里的任何改动（画一笔 / 撤销 / 清空 / 换底图）都重新写一次剪贴板，
+    // 用户始终可以随手 Ctrl+V。防抖 260ms 合并连续操作，且仍落在用户手势的手里
+    // （Chrome 要求 clipboard.write 在 transient activation 窗口内，约 5s）
+    let copyTimer = 0;
+    function autoCopy() {
+      if (copyTimer) clearTimeout(copyTimer);
+      if (btnCopy.isConnected) btnCopy.textContent = '复制中…';
+      copyTimer = setTimeout(() => {
+        copyTimer = 0;
+        copyImageToClipboard(currentUrl()).then(
+          () => { if (btnCopy.isConnected) btnCopy.textContent = '已复制 ✓'; },
+          // 失败（无权限 / 非安全上下文 / 手势过期）就把文案拨回「复制图片」，交给用户手动点
+          () => { if (btnCopy.isConnected) btnCopy.textContent = '复制图片'; },
+        );
+      }, 260);
+    }
+    // 换底图后要等新图解码完再复制，否则复制到的还是上一张
+    const updateImg = (u) => {
+      curUrl = u;
+      if (anno) anno.setImage(u, autoCopy);
+      else {
+        view.src = u;
+        autoCopy();
+      }
+    };
+    if (anno) anno.onChange(autoCopy);
     const btnClose = document.createElement('button');
     btnClose.className = 'ac-share-btn ac-share-close';
     btnClose.textContent = '关闭';

@@ -453,8 +453,10 @@
     window.addEventListener('resize', onResize);
 
     // ---------- 对外 ----------
-    function setImage(url) {
+    // cb 在新图解码并画好之后触发（换底图后要重新自动复制，不能复制上一张）
+    function setImage(url, cb) {
       const im = new Image();
+      im.onerror = () => { if (cb) cb(); };
       im.onload = () => {
         const oldW = cv.width;
         const oldH = cv.height;
@@ -478,6 +480,7 @@
           }
         }
         flush();
+        if (cb) cb();
       };
       im.src = url;
     }
