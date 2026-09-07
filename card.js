@@ -3427,18 +3427,34 @@
   // 预览浮层：下载 / 复制到剪贴板 / 关闭；弹出即尝试自动复制，HTTP 站点/权限拒绝时静默降级到手动按钮
   function showPreview(root, dataUrl, opts = {}) {
     ensurePreviewStyle(root);
-    root.querySelector('.ac-share-mask')?.remove();
+    // 换图重开前先把上一个浮层的标注编辑器销毁（它身上有 window 级监听，直接 remove 会泄漏）
+    const prev = root.querySelector('.ac-share-mask');
+    if (prev) {
+      try { prev.__acAnnoDestroy?.(); } catch { /* 已销毁 */ }
+      prev.remove();
+    }
     const mask = document.createElement('div');
     mask.className = 'ac-share-mask';
     const box = document.createElement('div');
     box.className = 'ac-share-card-box';
-    const img = document.createElement('img');
-    img.className = 'ac-share-img';
-    img.src = dataUrl;
-    img.alt = opts.alt || '分享卡片预览';
+    // 标注编辑器（箭头 / 矩形 / 马赛克等）：截图与划线分享共用，__acAnnotate 缺失时退化成普通图片
+    let anno = null;
+    let view;
+    if (opts.annotate !== false && globalThis.__acAnnotate) {
+      anno = globalThis.__acAnnotate.create(root, dataUrl, {});
+      view = anno.el;
+    } else {
+      const img = document.createElement('img');
+      img.className = 'ac-share-img';
+      img.src = dataUrl;
+      img.alt = opts.alt || '分享卡片预览';
+      view = img;
+    }
     // 图片可被扩展操作替换（如截图主题包背景快捷开关重合成），复制/下载始终取当前图
     let curUrl = dataUrl;
-    const updateImg = (u) => { curUrl = u; img.src = u; };
+    const updateImg = (u) => { curUrl = u; if (anno) anno.setImage(u); else view.src = u; };
+    // 有标注就取「底图 + 标注层」的合成图；没标注直接返回原图，省一次大图编码
+    const currentUrl = () => (anno ? anno.exportUrl() || curUrl : curUrl);
     const acts = document.createElement('div');
     acts.className = 'ac-share-actions';
     const btnDl = document.createElement('button');
@@ -3446,7 +3462,7 @@
     btnDl.textContent = '下载图片';
     btnDl.addEventListener('click', () => {
       const a = document.createElement('a');
-      a.href = curUrl;
+      a.href = currentUrl();
       a.download = opts.fileName || `anycomment-quote-${Date.now()}.png`;
       a.click();
     });
@@ -3461,20 +3477,25 @@
     );
     btnCopy.addEventListener('click', async () => {
       try {
-        await copyImageToClipboard(curUrl);
+        await copyImageToClipboard(currentUrl());
         btnCopy.textContent = '已复制 ✓';
       } catch {
         btnCopy.textContent = '复制失败，请下载';
       }
     });
+    // 标注一改，弹出时自动复制的那张图就过期了，把文案拨回「复制图片」提示重点一次
+    if (anno) anno.onChange(() => { btnCopy.textContent = '复制图片'; });
     const btnClose = document.createElement('button');
     btnClose.className = 'ac-share-btn ac-share-close';
     btnClose.textContent = '关闭';
     // 关闭统一走 close()：顺带移除 Esc 监听，避免浮层关了监听还在
     const onKey = (e) => { if (e.key === 'Escape') close(); };
     window.addEventListener('keydown', onKey, true);
+    // 标注编辑器跟着浮层一起销毁，别的入口（截图重开）也要能拿到
+    mask.__acAnnoDestroy = () => { if (anno) anno.destroy(); };
     function close() {
       mask.remove();
+      if (anno) anno.destroy();
       window.removeEventListener('keydown', onKey, true);
     }
     btnClose.addEventListener('click', close);
@@ -3492,7 +3513,7 @@
       acts.append(b);
     }
     acts.append(btnDl, btnCopy, btnClose);
-    box.append(img, acts);
+    box.append(view, acts);
     mask.append(box);
     mask.addEventListener('click', (e) => { if (e.target === mask) close(); });
     root.appendChild(mask);
