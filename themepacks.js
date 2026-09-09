@@ -43,7 +43,9 @@
       entry(manifest, key) {
         if (!manifest || !manifest.weeks) return null;
         const e = manifest.weeks[key];
-        return e ? { name: e.n, file: e.f, label: `第${Number(key)}周 · ${e.n}` } : null;
+        if (!e) return null;
+        const n = displayName(e.n);
+        return { name: n, file: e.f, label: `第${Number(key)}周 · ${n}` };
       },
       imageUrl(file) {
         return this.base + '/monet/' + file;
@@ -63,7 +65,9 @@
       entry(manifest, key) {
         if (!manifest || !manifest.months) return null;
         const e = manifest.months[key];
-        return e ? { name: e.n, file: e.f, label: `${Number(key)}月 · ${e.n}` } : null;
+        if (!e) return null;
+        const n = displayName(e.n);
+        return { name: n, file: e.f, label: `${Number(key)}月 · ${n}` };
       },
       imageUrl(file) {
         return this.base + '/monet-k3/' + file;
@@ -93,6 +97,13 @@
   // 包条目集合的通用取值：days=按日包 / weeks=按周包 / months=按月包
   function packColl(manifest) {
     return (manifest && (manifest.days || manifest.weeks || manifest.months)) || null;
+  }
+
+  // 条目显示名（分享卡片右上角、设置页选择器、随机换图共用一个出口）：
+  // 文件名里的下划线换成空格；「其他主题_」系列前缀直接去掉只留画名
+  function displayName(n) {
+    const s = n.startsWith('其他主题_') ? n.slice(5) : n;
+    return s.replace(/_/g, ' ');
   }
 
   function loadImage(url) {
