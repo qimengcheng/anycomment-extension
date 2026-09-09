@@ -241,7 +241,7 @@
       if (cfg[`pack_${p.id}`] !== true) continue; // 关闭的包不进选择器
       let m = null;
       try { m = await packsApi.ensure(p.id); } catch (e) { /* 忽略 */ }
-      const coll = (m && (m.days || m.months)) || null; // days=按日包（花开有时），months=按月包（莫奈画集）
+      const coll = (m && (m.days || m.weeks || m.months)) || null; // days=按日包（花开有时），weeks=按周包（莫奈画集），months=按月包（莫奈十二景）
       if (!coll) continue;
       const items = Object.keys(coll).sort().map((k) => {
         const e = p.entry(m, k);
@@ -314,7 +314,7 @@
       const el = $(`pack_status_${p.id}`);
       if (!el) continue;
       const m = packsApi ? packsApi.manifest(p.id) : null;
-      const count = m ? Object.keys(m.days || m.months || {}).length : 0;
+      const count = m ? Object.keys(m.days || m.weeks || m.months || {}).length : 0;
       if (cfg[`pack_${p.id}`] === true && count) {
         el.textContent = `已启用 · 已收录 ${count} 项（版本 v${m.version}），命中日期自动加载当天内容，仅按需拉取单张图`;
       } else if (cfg[`pack_${p.id}`] === true) {

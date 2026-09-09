@@ -339,7 +339,22 @@
     pendingQuote = null;
     try {
       const dataUrl = card.drawShareCard({ text: q.text, title: document.title, site: location.host, url: pageUrl(), festive: festiveBg, memorial: memorialBg, defaultTheme });
-      card.showPreview(shadow, dataUrl, { alt: '划线分享卡片预览' });
+      // 主题包随机换图：有可用包才出按钮，点一次随机抽一张重合成（避开当前这张）
+      const actions = [];
+      if (globalThis.__acThemePacks?.randomReady?.()) {
+        let lastPack = globalThis.__acThemePack ? `${globalThis.__acThemePack.packId}:${globalThis.__acThemePack.key}` : '';
+        actions.push({
+          label: '换一张背景',
+          onClick: async (updateImg) => {
+            const e = await globalThis.__acThemePacks.randomEntry(lastPack);
+            if (!e) throw new Error('no-pack-art');
+            lastPack = `${e.packId}:${e.key}`;
+            updateImg(card.drawShareCard({ text: q.text, title: document.title, site: location.host, url: pageUrl(), festive: festiveBg, memorial: memorialBg, defaultTheme, packArt: e }));
+            return '换一张背景';
+          },
+        });
+      }
+      card.showPreview(shadow, dataUrl, { alt: '划线分享卡片预览', actions });
       recordQuoteShare(q); // 记录划线（登录态），并即时给页面加虚线
     } catch (e) {
       showExtToast('生成分享卡片失败');

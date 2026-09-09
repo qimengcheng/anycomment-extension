@@ -32,9 +32,29 @@
     {
       id: 'monet',
       name: '莫奈画集',
+      desc: '每周一幅莫奈名画背景',
+      base: 'https://anycomment-monet-pack.pages.dev',
+      // manifest.weeks = { 'NN': { n: 画名, f: 文件名 } }；NN = 一年第 N 周（ISO 周序号，53 周年份并入第 52 周）
+      resolve(manifest, date) {
+        if (!manifest || !manifest.weeks) return null;
+        const key = String(Math.min(52, isoWeek(date))).padStart(2, '0');
+        return manifest.weeks[key] ? key : null;
+      },
+      entry(manifest, key) {
+        if (!manifest || !manifest.weeks) return null;
+        const e = manifest.weeks[key];
+        return e ? { name: e.n, file: e.f, label: `第${Number(key)}周 · ${e.n}` } : null;
+      },
+      imageUrl(file) {
+        return this.base + '/monet/' + file;
+      },
+    },
+    {
+      id: 'monet-k3',
+      name: '莫奈十二景',
       desc: '每月一幅莫奈名画背景',
       base: 'https://anycomment-monet-pack.pages.dev',
-      // manifest.months = { 'MM': { n: 画名, f: 文件名 } }；当月有收录返回 key，否则 null
+      // 老版月更莫奈包（12 幅），assets 部署在同项目 /monet-k3/ 路径下，manifest 用 months 键
       resolve(manifest, date) {
         if (!manifest || !manifest.months) return null;
         const key = String(date.getMonth() + 1).padStart(2, '0');
@@ -46,7 +66,7 @@
         return e ? { name: e.n, file: e.f, label: `${Number(key)}月 · ${e.n}` } : null;
       },
       imageUrl(file) {
-        return this.base + '/monet/' + file;
+        return this.base + '/monet-k3/' + file;
       },
     },
   ];
@@ -59,6 +79,20 @@
 
   function dayKey(d = new Date()) {
     return String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
+  }
+
+  // ISO 周序号（周一为一周开始，含当年第一个周四的那周是第 1 周）
+  function isoWeek(date) {
+    const t = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    t.setDate(t.getDate() - ((t.getDay() + 6) % 7) + 3); // 移到所在周的周四
+    const firstThu = new Date(t.getFullYear(), 0, 4);
+    firstThu.setDate(firstThu.getDate() - ((firstThu.getDay() + 6) % 7) + 3);
+    return 1 + Math.round((t - firstThu) / (7 * 24 * 3600 * 1000));
+  }
+
+  // 包条目集合的通用取值：days=按日包 / weeks=按周包 / months=按月包
+  function packColl(manifest) {
+    return (manifest && (manifest.days || manifest.weeks || manifest.months)) || null;
   }
 
   function loadImage(url) {
@@ -90,7 +124,7 @@
       const res = await fetch(pack.base + '/manifest.json', { cache: 'no-cache', signal: AbortSignal.timeout(8000) });
       if (res.ok) {
         const m = await res.json();
-        const rec = { version: m.version, count: m.count, days: m.days, months: m.months, fetched_at: Date.now() };
+        const rec = { version: m.version, count: m.count, days: m.days, weeks: m.weeks, months: m.months, fetched_at: Date.now() };
         chrome.storage.local.set({ [cacheKey]: rec });
         return rec;
       }
@@ -263,6 +297,49 @@
       const img = st.images.get(key);
       if (!e || !img) return null;
       return { name: e.name, label: e.label || e.name, img };
+    },
+    // 预览「换一张背景」可用性：任一已开启的包清单在手且有内容
+    randomReady() {
+      return PACKS.some((p) => {
+        const st = state.get(p.id);
+        return st.enabled && st.manifest && packColl(st.manifest);
+      });
+    },
+    // 随机取一个包条目（含懒加载图片），供分享预览「换一张背景」重合成。
+    // exclude = 'packId:key' 时避开当前这张（只影响首选，被避开项外的图全失败仍会兜底回去）。
+    // 返回 { packId, key, name, label, img }；无包可用/全部拉图失败返回 null
+    async randomEntry(exclude = '') {
+      const pool = [];
+      for (const p of PACKS) {
+        const st = state.get(p.id);
+        if (!st.enabled || !st.manifest) continue;
+        const coll = packColl(st.manifest);
+        if (!coll) continue;
+        for (const key of Object.keys(coll)) {
+          if (`${p.id}:${key}` === exclude) continue;
+          const e = p.entry(st.manifest, key);
+          if (e) pool.push({ pack: p, key, e });
+        }
+      }
+      // Fisher-Yates 全随机洗牌后顺序尝试，拉图失败自动换下一张
+      for (let i = pool.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [pool[i], pool[j]] = [pool[j], pool[i]];
+      }
+      for (const { pack, key, e } of pool) {
+        const st = state.get(pack.id);
+        let img = st.images.get(key);
+        if (!img) {
+          try {
+            img = await loadImage(pack.imageUrl(e.file));
+            st.images.set(key, img);
+          } catch (err) {
+            continue;
+          }
+        }
+        return { packId: pack.id, key, name: e.name, label: e.label || e.name, img };
+      }
+      return null;
     },
   };
 })();

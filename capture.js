@@ -93,19 +93,34 @@
       const raw = 'data:image/png;base64,' + shot.res.data;
       const shotTime = Date.now();
       const dataUrl = card.composeScreenshot({ img: shot.img, dataUrl: raw, url: pageUrl(), time: shotTime, opts: cfg });
+      const actions = [{
+        label: cfg.card_pack_shot_bg === true ? '背景图案：开' : '背景图案：关',
+        onClick: async (updateImg) => {
+          cfg.card_pack_shot_bg = !(cfg.card_pack_shot_bg === true);
+          chrome.storage.local.set({ card_pack_shot_bg: cfg.card_pack_shot_bg });
+          updateImg(card.composeScreenshot({ img: shot.img, dataUrl: raw, url: pageUrl(), time: shotTime, opts: cfg }));
+          return cfg.card_pack_shot_bg ? '背景图案：开' : '背景图案：关';
+        },
+      }];
+      // 主题包随机换图：有可用包才出按钮，点一次随机抽一张重合成（避开当前这张）
+      if (globalThis.__acThemePacks?.randomReady?.()) {
+        let lastPack = globalThis.__acThemePack ? `${globalThis.__acThemePack.packId}:${globalThis.__acThemePack.key}` : '';
+        actions.push({
+          label: '换一张背景',
+          onClick: async (updateImg) => {
+            const e = await globalThis.__acThemePacks.randomEntry(lastPack);
+            if (!e) throw new Error('no-pack-art');
+            lastPack = `${e.packId}:${e.key}`;
+            updateImg(card.composeScreenshot({ img: shot.img, dataUrl: raw, url: pageUrl(), time: shotTime, opts: cfg, packArt: e }));
+            return '换一张背景';
+          },
+        });
+      }
       card.showPreview(shadow, dataUrl, {
         alt: '网页截图',
         fileName: `anycomment-shot-${Date.now()}.png`,
-        // 主题包背景快捷开关：不关弹窗即时重合成，并写入 storage 与设置页保持同步
-        actions: [{
-          label: cfg.card_pack_shot_bg === true ? '背景图案：开' : '背景图案：关',
-          onClick: async (updateImg) => {
-            cfg.card_pack_shot_bg = !(cfg.card_pack_shot_bg === true);
-            chrome.storage.local.set({ card_pack_shot_bg: cfg.card_pack_shot_bg });
-            updateImg(card.composeScreenshot({ img: shot.img, dataUrl: raw, url: pageUrl(), time: shotTime, opts: cfg }));
-            return cfg.card_pack_shot_bg ? '背景图案：开' : '背景图案：关';
-          },
-        }],
+        // 主题包背景快捷开关 / 随机换图：不关弹窗即时重合成，开关并写入 storage 与设置页保持同步
+        actions,
       });
       recordShotShare(); // 每次截图分享登记一次（登录态），服务端据此发分享积分
     } catch (e) {
