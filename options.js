@@ -9,7 +9,7 @@
   let cfg = { ...card.SHOT_DEFAULTS };
 
   const packDefaults = Object.fromEntries(packs.map((p) => [`pack_${p.id}`, false]));
-  chrome.storage.local.get({ ...card.SHOT_DEFAULTS, ...packDefaults }, (v) => {
+  chrome.storage.local.get({ ...card.SHOT_DEFAULTS, ...packDefaults, pack_random_pick: false }, (v) => {
     cfg = { ...card.SHOT_DEFAULTS, ...v };
     render();
     buildPickers(); // cfg 就绪后才能按包开关收录分组（同步阶段的 buildPickers 只会看到空 cfg）
@@ -25,6 +25,7 @@
       const k = `pack_${p.id}`;
       if (changes[k]) { cfg[k] = changes[k].newValue; hit = true; }
     }
+    if (changes.pack_random_pick) { cfg.pack_random_pick = changes.pack_random_pick.newValue; hit = true; }
     if (hit) render();
   });
 
@@ -46,6 +47,7 @@
       const el = $(`pack_${p.id}`);
       if (el) el.checked = cfg[`pack_${p.id}`] === true;
     }
+    $('pack_random_pick').checked = cfg.pack_random_pick === true;
     $(cfg.shot_qr_overlay ? 'pos_overlay' : 'pos_strip').checked = true;
     $('cornerBox').classList.toggle('off', !cfg.shot_qr_overlay || !cfg.shot_qr);
     const corner = document.querySelector(`input[name="corner"][value="${cfg.shot_qr_corner}"]`);
@@ -65,6 +67,7 @@
   $('card_memorial_bg').addEventListener('change', (e) => save({ card_memorial_bg: e.target.checked }));
   $('card_pack_shot_bg').addEventListener('change', (e) => save({ card_pack_shot_bg: e.target.checked }));
   $('card_pack_shot_desat').addEventListener('input', (e) => save({ card_pack_shot_desat: Number(e.target.value) }));
+  $('pack_random_pick').addEventListener('change', (e) => save({ pack_random_pick: e.target.checked }));
   // 主题包开关行由 buildPackRows 动态生成，监听也在此处绑定（行生成前 DOM 尚不存在）
   $('pos_overlay').addEventListener('change', () => save({ shot_qr_overlay: true }));
   $('pos_strip').addEventListener('change', () => save({ shot_qr_overlay: false }));
@@ -94,7 +97,7 @@
     clearTimeout(resetTimer);
     btn.classList.remove('danger');
     btn.textContent = '恢复默认设置';
-    const patch = { ...card.SHOT_DEFAULTS, ...Object.fromEntries(packs.map((p) => [`pack_${p.id}`, false])) };
+    const patch = { ...card.SHOT_DEFAULTS, ...Object.fromEntries(packs.map((p) => [`pack_${p.id}`, false])), pack_random_pick: false };
     previewTheme = '';
     themePick.set('');
     save(patch);
@@ -233,8 +236,9 @@
       if (cfg[`pack_${p.id}`] !== true) continue; // 关闭的包不进选择器
       let m = null;
       try { m = await packsApi.ensure(p.id); } catch (e) { /* 忽略 */ }
-      if (!m || !m.days) continue;
-      const items = Object.keys(m.days).sort().map((k) => {
+      const coll = (m && (m.days || m.months)) || null; // days=按日包（花开有时），months=按月包（莫奈画集）
+      if (!coll) continue;
+      const items = Object.keys(coll).sort().map((k) => {
         const e = p.entry(m, k);
         return { value: `pack_${p.id}:${k}`, label: e.label || e.name };
       });
@@ -305,13 +309,13 @@
       const el = $(`pack_status_${p.id}`);
       if (!el) continue;
       const m = packsApi ? packsApi.manifest(p.id) : null;
-      const count = m && m.days ? Object.keys(m.days).length : 0;
+      const count = m ? Object.keys(m.days || m.months || {}).length : 0;
       if (cfg[`pack_${p.id}`] === true && count) {
-        el.textContent = `已启用 · 已收录 ${count} 天（版本 v${m.version}），每天自动加载当天内容，仅拉取约 0.2MB`;
+        el.textContent = `已启用 · 已收录 ${count} 项（版本 v${m.version}），命中日期自动加载当天内容，仅按需拉取单张图`;
       } else if (cfg[`pack_${p.id}`] === true) {
         el.textContent = `已启用，主题清单尚未加载成功，稍后自动重试（断网时回落默认背景）`;
       } else {
-        el.textContent = `${p.desc}；从网络按需加载（每天约 0.2MB），不影响扩展体积${count ? `，已收录 ${count} 天` : ''}，断网或未收录日期回落默认背景`;
+        el.textContent = `${p.desc}；从网络按需加载（单张图约 0.2MB），不影响扩展体积${count ? `，已收录 ${count} 项` : ''}，断网或未收录日期回落默认背景`;
       }
     }
   }

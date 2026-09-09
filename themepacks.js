@@ -53,6 +53,7 @@
 
   const state = new Map(); // id -> { enabled, manifest, images: Map(key -> HTMLImageElement) }
   for (const p of PACKS) state.set(p.id, { enabled: false, manifest: null, images: new Map() });
+  let randomPick = false; // pack_random_pick：多包同时开启时每天随机选一个，而不是按注册表顺序优先
 
   function dayKey(d = new Date()) {
     return String(d.getMonth() + 1).padStart(2, '0') + String(d.getDate()).padStart(2, '0');
@@ -97,9 +98,28 @@
     return cached;
   }
 
-  // 就绪的包按注册表顺序取第一个命中的：发布 { packId, key, name, img }；都不命中发布 null。
+  // 随机模式的确定性洗牌：用日期做种子——同一天所有页面结果一致（当天背景固定），跨天随机。
+  // 只在候选 >1 时调用；包数 ≤1 或开关关闭时保持注册表顺序。
+  function shuffleByDate(list) {
+    const dk = dayKey();
+    let seed = 2166136261; // FNV-1a 起点
+    for (let i = 0; i < dk.length; i++) {
+      seed ^= dk.charCodeAt(i);
+      seed = Math.imul(seed, 16777619) >>> 0;
+    }
+    for (let i = list.length - 1; i > 0; i--) {
+      seed = (Math.imul(seed, 1103515245) + 12345) >>> 0;
+      const j = seed % (i + 1);
+      [list[i], list[j]] = [list[j], list[i]];
+    }
+    return list;
+  }
+
+  // 就绪的包里取第一个命中的：发布 { packId, key, name, img }；都不命中发布 null。
   // 中途跨天按打开那天的图显示，下次导航自然换新，不为此加定时器。
   async function publish() {
+    // 先收集「已开启 + 清单在手 + 今天命中」的所有候选，再按顺序取第一个图片加载成功的（拉图失败自动顺延，兜底链不变）
+    const candidates = [];
     for (const pack of PACKS) {
       const st = state.get(pack.id);
       if (!st.enabled || !st.manifest) continue;
@@ -107,13 +127,18 @@
       if (!key) continue;
       const e = pack.entry(st.manifest, key);
       if (!e) continue;
+      candidates.push({ pack, key, e });
+    }
+    if (randomPick && candidates.length > 1) shuffleByDate(candidates);
+    for (const { pack, key, e } of candidates) {
+      const st = state.get(pack.id);
       let img = st.images.get(key);
       if (!img) {
         try {
           img = await loadImage(pack.imageUrl(e.file));
           st.images.set(key, img);
         } catch (err) {
-          continue; // 拉图失败试下一个包，最后回落 null
+          continue; // 拉图失败试下一个候选，最后回落 null
         }
       }
       globalThis.__acThemePack = { packId: pack.id, key, name: e.name, label: e.label || e.name, img };
@@ -135,10 +160,11 @@
   async function init() {
     const v = await new Promise((r) =>
       chrome.storage.local.get(
-        { ...Object.fromEntries(PACKS.map((p) => [`pack_${p.id}`, false])), card_default_theme: '' },
+        { ...Object.fromEntries(PACKS.map((p) => [`pack_${p.id}`, false])), card_default_theme: '', pack_random_pick: false },
         (x) => r(x)
       )
     );
+    randomPick = v.pack_random_pick === true;
     for (const p of PACKS) {
       const st = state.get(p.id);
       st.enabled = v[`pack_${p.id}`] === true;
@@ -178,6 +204,10 @@
       else publish();
     }
     if (changes.card_default_theme) warmDefaultPack();
+    if (changes.pack_random_pick) {
+      randomPick = changes.pack_random_pick.newValue === true;
+      publish();
+    }
   });
   init();
 
