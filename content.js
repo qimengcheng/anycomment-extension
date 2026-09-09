@@ -201,10 +201,14 @@
       quoteBtn.style.top = top + 'px';
       quoteBtn.style.display = 'flex';
       // 保存选中的文字和上下文，供点击评论按钮时使用
+      // path/index 是强兜底锚点：上下文区分不出来时（同名短词）按元素路径 + 第 n 处命中定位
+      const hostEl = anchorElement(range);
       pendingQuote = {
         text: text,
         before: getContextBefore(range, 100),
         after: getContextAfter(range, 100),
+        path: buildElementPath(hostEl),
+        index: occurrenceIndex(hostEl, range, text),
       };
     }, 10);
   }
@@ -263,6 +267,35 @@
     } catch { return ''; }
   }
 
+  // 选区的宿主元素：用于记录 DOM 路径锚点（commonAncestorContainer 可能是文本节点）
+  function anchorElement(range) {
+    let n = range.commonAncestorContainer;
+    if (n && n.nodeType !== 1) n = n.parentElement;
+    return n && n !== document.body && n !== document.documentElement ? n : null;
+  }
+
+  // 选区是宿主元素内第几处相同文字（0 起），与 findCandidates 的候选顺序同一口径（都按规范化文本数）
+  function occurrenceIndex(hostEl, range, text) {
+    if (!hostEl) return 0;
+    try {
+      const pre = document.createRange();
+      pre.setStart(hostEl, 0);
+      pre.setEnd(range.startContainer, range.startOffset);
+      const hay = normalizeText(pre.toString());
+      const needle = normalizeText(text);
+      if (!needle) return 0;
+      let n = 0;
+      let i = hay.indexOf(needle);
+      while (i !== -1) {
+        n += 1;
+        i = hay.indexOf(needle, i + 1);
+      }
+      return n;
+    } catch (e) {
+      return 0;
+    }
+  }
+
   // 划线评论：点击浮动评论按钮，打开侧边栏并发送选中文字给 widget
   function onQuoteComment() {
     if (!pendingQuote) return;
@@ -276,6 +309,8 @@
         quote_text: pendingQuote.text,
         quote_before: pendingQuote.before,
         quote_after: pendingQuote.after,
+        quote_path: pendingQuote.path || null,
+        quote_index: pendingQuote.index || 0,
       }, serverOrigin);
     };
     if (iframeReady) {
@@ -327,6 +362,8 @@
           quote_text: q.text,
           quote_before: q.before || null,
           quote_after: q.after || null,
+          quote_path: q.path || null,
+          quote_index: Number.isInteger(q.index) ? q.index : 0,
         }),
       }).then((res) => (res.ok ? res.json() : null)).then((d) => {
         if (!d) return;
@@ -347,12 +384,21 @@
     });
   }
 
-  // 给单条划线记录文字加虚线（findQuoteRange 复用评论定位算法）
+  // 给单条划线记录文字加虚线（locateQuote 复用评论定位算法）
   function paintShareQuote(q) {
-    const range = findQuoteRange({ quote_text: q.text, quote_before: q.before, quote_after: q.after });
-    if (!range) return false;
-    const mark = highlightRange(range, null, 'share');
-    if (mark) mark.classList.add('ac-share-highlight');
+    const hit = locateQuote({
+      quote_text: q.text,
+      quote_before: q.before,
+      quote_after: q.after,
+      quote_path: q.path,
+      quote_index: q.index,
+    });
+    if (!hit) return false;
+    const mark = highlightRange(hit.range, null, 'share');
+    if (mark) {
+      mark.classList.add('ac-share-highlight');
+      mark.dataset.acAnchor = hit.level; // 记录当次实际生效的定位级别，便于排查
+    }
     return !!mark;
   }
 
@@ -366,7 +412,7 @@
         setTimeout(() => {
           for (const s of d.shares) {
             if (!s.quote_text) continue;
-            paintShareQuote({ text: s.quote_text, before: s.quote_before, after: s.quote_after });
+            paintShareQuote({ text: s.quote_text, before: s.quote_before, after: s.quote_after, path: s.quote_path, index: s.quote_index });
           }
         }, 300);
       })
@@ -398,6 +444,13 @@
   // 规范化空白字符：把换行、制表符、多个空格都换成单个空格，方便匹配
   function normalizeText(text) {
     return text.replace(/\s+/g, ' ').trim();
+  }
+
+  // 打分比较时彻底剥掉空白：捕获上下文时节点之间**不加**分隔符（getContextBefore 直接 join('')），
+  // 而拼接全文定位时每个节点后**加了一个空格**，两侧空白口径不一致会让公共前后缀在节点交界处断掉，
+  // 最长只能 match 到 2 个字 —— 这是同名短词（如"小米"）被定位到标题上的放大器。比较前统一剥掉即可免疫。
+  function stripWs(text) {
+    return (text || '').replace(/\s+/g, '');
   }
 
   // 规范化文本并建立「规范化索引 → 原始索引」映射
@@ -444,6 +497,8 @@
   }
 
   // 末尾/开头部分匹配的得分（0~0.5）：完整相等给满，部分相同按比例给分
+  // 分母取 min(两侧长度)：之前固定用 ref.length（上下文 100 字），节点局部上下文只有几个字时
+  // 所有候选的分数都被压成 0.00x 的噪声 → 同分并列 → 稳定排序按文档顺序取到标题上
   function partialScore(slice, ref, fromEnd) {
     if (!ref) return 0.5;
     if (slice === ref) return 0.5;
@@ -455,46 +510,25 @@
       if (a === b) common = i;
       else break;
     }
-    return 0.5 * (common / ref.length);
+    return len ? 0.5 * (common / len) : 0;
   }
 
-  // 计算匹配的上下文相似度（0-1，越高越匹配）
-  // match.start/end 一律是原始文本索引：两侧都切原始文本再规范化，坐标系才一致
-  function contextMatchScore(match, before, after) {
-    if (!before && !after) return 1;
-    const text = match.node.textContent;
-    let score = 0;
-    if (before) {
-      const normBefore = normalizeText(before);
-      if (normBefore) {
-        // 多切一段再比较：上下文是规范化文本，原始文本里的空白/节点间隙会占位，
-        // 按 len 精确切会把窗口切短；后缀/前缀比较天然容忍多切
-        const matchBefore = normalizeText(text.slice(Math.max(0, match.start - before.length - 30), match.start));
-        score += partialScore(matchBefore, normBefore, true); // 取末尾部分比较
-      } else {
-        score += 0.5;
-      }
-    } else {
-      score += 0.5;
+  // 结构先验：标题/导航/页脚里的文字通常不是用户在正文里划的那段，同分时往后排。
+  // 只压 0.08 的小分，不足以翻盘真实的上下文分差，仅在并列时起作用
+  const NON_BODY_TAGS = new Set(['H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'NAV', 'HEADER', 'FOOTER', 'ASIDE', 'BUTTON', 'FIGCAPTION', 'TITLE']);
+  const NON_BODY_ROLES = new Set(['navigation', 'banner', 'contentinfo']);
+  function structuralPenalty(node) {
+    let el = node ? node.parentElement : null;
+    for (let depth = 0; el && el !== document.body && depth < 6; depth += 1, el = el.parentElement) {
+      if (NON_BODY_TAGS.has(el.tagName)) return 0.08;
+      const role = el.getAttribute ? (el.getAttribute('role') || '').toLowerCase() : '';
+      if (role && NON_BODY_ROLES.has(role)) return 0.08;
     }
-    if (after) {
-      const normAfter = normalizeText(after);
-      if (normAfter) {
-        const matchAfter = normalizeText(text.slice(match.end, match.end + after.length + 30));
-        score += partialScore(matchAfter, normAfter, false); // 取开头部分比较
-      } else {
-        score += 0.5;
-      }
-    } else {
-      score += 0.5;
-    }
-    return score;
+    return 0;
   }
 
-  // 跨节点查找 quote_text（文字被标签分割的情况）
-  // 找出所有出现位置并按上下文相似度挑最佳，之前只取第一处，同名文字常错选到标题上
-  function findAcrossNodes(textNodes, quoteText, before, after) {
-    // 拼接所有文本节点内容，同时记录每个字符对应的节点和偏移
+  // 把一组文本节点拼成「全文 + 索引」，供跨节点定位与上下文打分共用
+  function buildTextIndex(textNodes) {
     let fullText = '';
     const charMap = [];
     for (const node of textNodes) {
@@ -508,16 +542,20 @@
       charMap.push({ node, offset: text.length, isGap: true });
     }
     const { normalized, map } = buildNormalized(fullText);
+    return { fullText, charMap, normalized, map };
+  }
+
+  // 在拼接索引里找 quote_text 的全部出现位置（含被标签分割、跨节点的情况）
+  function findCandidates(index, quoteText) {
     const normalizedQuote = normalizeText(quoteText);
-    if (!normalizedQuote) return null;
-    // 收集所有出现位置
+    if (!normalizedQuote) return [];
     const candidates = [];
-    let idx = normalized.indexOf(normalizedQuote);
+    let idx = index.normalized.indexOf(normalizedQuote);
     while (idx !== -1) {
-      const startRaw = map[idx];
-      const endRaw = map[idx + normalizedQuote.length - 1] + 1;
-      const startInfo = charMap[startRaw];
-      const endInfo = charMap[endRaw - 1];
+      const startRaw = index.map[idx];
+      const endRaw = index.map[idx + normalizedQuote.length - 1] + 1;
+      const startInfo = index.charMap[startRaw];
+      const endInfo = index.charMap[endRaw - 1];
       if (startInfo && endInfo && !startInfo.isGap && !endInfo.isGap) {
         candidates.push({
           startNode: startInfo.node,
@@ -528,44 +566,95 @@
           ctxEnd: endRaw,
         });
       }
-      idx = normalized.indexOf(normalizedQuote, idx + 1);
+      idx = index.normalized.indexOf(normalizedQuote, idx + 1);
     }
-    if (candidates.length === 0) return null;
-    // 按上下文相似度挑最佳（在拼接后的全文上比较，两侧同样先规范化）
-    if (before || after) {
-      let best = null;
-      let bestScore = -1;
-      for (const c of candidates) {
-        let score = 0;
-        if (before) {
-          const normBefore = normalizeText(before);
-          // 窗口多切 30 字符：节点间隙空格会占位，后缀比较容忍多切（见 contextMatchScore 注释）
-          score += normBefore
-            ? partialScore(normalizeText(fullText.slice(Math.max(0, c.ctxStart - before.length - 30), c.ctxStart)), normBefore, true)
-            : 0.5;
-        } else {
-          score += 0.5;
-        }
-        if (after) {
-          const normAfter = normalizeText(after);
-          score += normAfter
-            ? partialScore(normalizeText(fullText.slice(c.ctxEnd, c.ctxEnd + after.length + 30)), normAfter, false)
-            : 0.5;
-        } else {
-          score += 0.5;
-        }
-        if (score > bestScore) {
-          bestScore = score;
-          best = c;
-        }
-      }
-      return best;
-    }
-    return candidates[0];
+    return candidates;
   }
 
-  // 在页面中查找 quote 对应的 Range，返回 Range 或 null
-  function findQuoteRange(quote) {
+  // 候选的上下文相似度（0-1）：在拼接全文上取左右窗口，两侧都先剥空白再比前后缀
+  // before/after 都缺失时无法区分（所有候选同分 1），由 hasContext 判定为不可信
+  function contextScore(index, cand, before, after) {
+    const refBefore = stripWs(before);
+    const refAfter = stripWs(after);
+    if (!refBefore && !refAfter) return 1;
+    let score = 0;
+    if (refBefore) {
+      // 窗口多切 30 字符：节点间隙空格会占位，后缀比较容忍多切
+      score += partialScore(stripWs(index.fullText.slice(Math.max(0, cand.ctxStart - before.length - 30), cand.ctxStart)), refBefore, true);
+    } else {
+      score += 0.5;
+    }
+    if (refAfter) {
+      score += partialScore(stripWs(index.fullText.slice(cand.ctxEnd, cand.ctxEnd + after.length + 30)), refAfter, false);
+    } else {
+      score += 0.5;
+    }
+    return score;
+  }
+
+  function hasContext(before, after) {
+    return !!(stripWs(before) || stripWs(after));
+  }
+
+  // ---------- DOM 路径 hint：创建划线时记下所在元素，定位失败时按路径兜底 ----------
+  // 路径形如 "div:2/div:1/p:3/strong:1"：每级是 标签名:第几个同标签兄弟（nth-of-type），
+  // 比 nth-child 稳（页面插广告/推荐位时同标签序号一般不变）
+  function buildElementPath(el) {
+    if (!el || el.nodeType !== 1 || el === document.body) return '';
+    const parts = [];
+    let cur = el;
+    while (cur && cur !== document.body && parts.length < 24) {
+      let nth = 1;
+      let sib = cur.previousElementSibling;
+      while (sib) {
+        if (sib.tagName === cur.tagName) nth += 1;
+        sib = sib.previousElementSibling;
+      }
+      parts.unshift(cur.tagName.toLowerCase() + ':' + nth);
+      cur = cur.parentElement;
+    }
+    return parts.join('/');
+  }
+
+  function resolveElementPath(path) {
+    if (!path) return null;
+    let el = document.body;
+    for (const seg of String(path).split('/')) {
+      if (!seg || !el) return null;
+      const pos = seg.lastIndexOf(':');
+      const tag = (pos > 0 ? seg.slice(0, pos) : seg).toLowerCase();
+      const want = parseInt(pos > 0 ? seg.slice(pos + 1) : '1', 10) || 1;
+      let nth = 0;
+      let found = null;
+      for (let c = el.firstElementChild; c; c = c.nextElementSibling) {
+        if (c.tagName.toLowerCase() === tag) {
+          nth += 1;
+          if (nth === want) { found = c; break; }
+        }
+      }
+      if (!found) return null;
+      el = found;
+    }
+    return el;
+  }
+
+  function spanRange(startNode, startOffset, endNode, endOffset) {
+    try {
+      const range = document.createRange();
+      range.setStart(startNode, Math.min(startOffset, startNode.textContent.length));
+      range.setEnd(endNode, Math.min(endOffset, endNode.textContent.length));
+      return range;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // 分级定位：从简单到复杂依次尝试，哪一级能给出可信结果就当场用哪一级，不写死单一算法
+  //   L1 单节点唯一命中 → L2 节点局部上下文 → L3 全页拼接上下文 → L4 DOM 路径 hint → L5 兜底
+  const CONF_MIN = 0.55; // 最佳候选至少要这么高（满分 1.0 = 上下文完全吻合）
+  const CONF_GAP = 0.25; // 且要领先第二名这么多，避免并列时按文档顺序撞到标题上
+
+  function locateQuote(quote) {
     const quoteText = quote.quote_text;
     const before = quote.quote_before || null;
     const after = quote.quote_after || null;
@@ -574,40 +663,83 @@
     const textNodes = collectTextNodes();
     if (textNodes.length === 0) return null;
 
-    // 收集所有单节点匹配
-    const allMatches = [];
+    // --- L1：单节点内唯一命中，不依赖上下文 ---
+    const local = [];
     for (const node of textNodes) {
-      const matches = findAllInSingleNode(node, quoteText);
-      for (const m of matches) {
-        allMatches.push({ ...m, score: contextMatchScore(m, before, after) });
+      for (const m of findAllInSingleNode(node, quoteText)) local.push({ ...m, node });
+    }
+    if (local.length === 1) {
+      const range = spanRange(local[0].node, local[0].start, local[0].node, local[0].end);
+      if (range) return { range, level: 'L1-unique' };
+    }
+
+    // --- L2：节点局部上下文打分（最轻量；正文文字没被行内标签割裂时这一级就够）---
+    let fallback = null;
+    if (local.length > 1) {
+      const refBefore = stripWs(before);
+      const refAfter = stripWs(after);
+      const scored = local
+        .map((m) => {
+          const text = m.node.textContent;
+          let score = 0;
+          score += refBefore
+            ? partialScore(stripWs(text.slice(Math.max(0, m.start - 130), m.start)), refBefore, true)
+            : 0.5;
+          score += refAfter
+            ? partialScore(stripWs(text.slice(m.end, m.end + 130)), refAfter, false)
+            : 0.5;
+          return { ...m, score: score - structuralPenalty(m.node) };
+        })
+        .sort((a, b) => b.score - a.score);
+      const range = spanRange(scored[0].node, scored[0].start, scored[0].node, scored[0].end);
+      if (range) fallback = { range, level: 'L2-local' };
+      if (range && hasContext(before, after)
+        && scored[0].score >= CONF_MIN
+        && scored[0].score - (scored[1] ? scored[1].score : 0) >= CONF_GAP) {
+        return { range, level: 'L2-local' };
       }
     }
 
-    // 按上下文相似度排序，取最高的
-    if (allMatches.length > 0) {
-      allMatches.sort((a, b) => b.score - a.score);
-      const best = allMatches[0];
-      const range = document.createRange();
-      // start/end 已是原始文本索引（buildNormalized 做了映射）
-      range.setStart(best.node, Math.min(best.start, best.node.textContent.length));
-      range.setEnd(best.node, Math.min(best.end, best.node.textContent.length));
-      return range;
-    }
-
-    // 单节点找不到，尝试跨节点查找
-    const across = findAcrossNodes(textNodes, quoteText, before, after);
-    if (across) {
-      const range = document.createRange();
-      try {
-        range.setStart(across.startNode, across.startOffset);
-        range.setEnd(across.endNode, across.endOffset);
-        return range;
-      } catch (e) {
-        return null;
+    // --- L3：全页拼接上下文打分（正文里的"小米"被 strong/a 等行内标签割裂时靠这级）---
+    const index = buildTextIndex(textNodes);
+    const cands = findCandidates(index, quoteText);
+    if (cands.length > 0) {
+      const scored = cands
+        .map((c) => ({ ...c, score: contextScore(index, c, before, after) - structuralPenalty(c.startNode) }))
+        .sort((a, b) => b.score - a.score);
+      const range = spanRange(scored[0].startNode, scored[0].startOffset, scored[0].endNode, scored[0].endOffset);
+      if (range && !fallback) fallback = { range, level: 'L3-full' };
+      if (range && hasContext(before, after)
+        && scored[0].score >= CONF_MIN
+        && scored[0].score - (scored[1] ? scored[1].score : 0) >= CONF_GAP) {
+        return { range, level: 'L3-full' };
       }
     }
 
-    return null;
+    // --- L4：DOM 路径 hint（上下文区分不出来时的强兜底）---
+    if (quote.quote_path) {
+      const host = resolveElementPath(quote.quote_path);
+      if (host) {
+        const sub = buildTextIndex(collectTextNodes(host));
+        const cs = findCandidates(sub, quoteText);
+        const nth = Number.isInteger(quote.quote_index) && quote.quote_index >= 0 ? quote.quote_index : 0;
+        const pick = cs[nth] || cs[0];
+        if (pick) {
+          const range = spanRange(pick.startNode, pick.startOffset, pick.endNode, pick.endOffset);
+          if (range) return { range, level: 'L4-path' };
+        }
+      }
+    }
+
+    // --- L5：兜底，用前面算出的最佳猜测（老划线没有上下文/没有路径时保持原行为）---
+    // 走到这里说明上面几级都没给出可信结果，标签统一标成 L5 便于区分
+    return fallback ? { range: fallback.range, level: 'L5-fallback' } : null;
+  }
+
+  // 在页面中查找 quote 对应的 Range，返回 Range 或 null
+  function findQuoteRange(quote) {
+    const hit = locateQuote(quote);
+    return hit ? hit.range : null;
   }
 
   // 高亮 Range 对应的文字，用 mark 标签包裹，返回创建的 mark 元素
@@ -662,14 +794,16 @@
         parent.removeChild(el);
       }
     });
-    const range = findQuoteRange(quote);
-    if (!range) {
+    const hit = locateQuote(quote);
+    if (!hit) {
       // 找不到时用 Toast 提示
       showExtToast('未在页面中找到对应的划线文字');
       return;
     }
+    const range = hit.range;
     const mark = highlightRange(range, quote.comment_id || null);
     if (mark) {
+      mark.dataset.acAnchor = hit.level;
       mark.classList.add('ac-quote-focus');
       mark.style.borderBottom = '2px solid #1d4ed8';
       mark.style.background = 'rgba(47,107,255,0.10)';
@@ -692,9 +826,10 @@
     setTimeout(() => {
       for (const quote of quotes) {
         if (!quote.quote_text) continue;
-        const range = findQuoteRange(quote);
-        if (range) {
-          highlightRange(range, quote.comment_id || null);
+        const hit = locateQuote(quote);
+        if (hit) {
+          const mark = highlightRange(hit.range, quote.comment_id || null);
+          if (mark) mark.dataset.acAnchor = hit.level;
         }
       }
     }, 500);
