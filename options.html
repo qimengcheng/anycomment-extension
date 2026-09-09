@@ -107,6 +107,19 @@
             <label class="ac-switch"><input type="checkbox" id="card_memorial_bg" /><span class="ac-switch-slider"></span></label>
           </div>
           <div class="row">
+            <span class="txt"><b>磨砂玻璃卡片</b><span>划线分享卡片的白底变半透明，卡片背后的背景做模糊处理（类似 CSS backdrop-filter: blur(5px)），呈现磨砂玻璃质感；只影响卡片，不影响截图</span></span>
+            <label class="ac-switch"><input type="checkbox" id="card_glass_mode" /><span class="ac-switch-slider"></span></label>
+          </div>
+          <div class="indent" id="glass_blur_box">
+            <div class="row">
+              <span class="txt"><b>磨砂模糊强度</b><span>卡片背后画面的模糊半径：0 = 只调透明度不模糊，数值越大玻璃越「雾」（拖动即时生效，右侧预览同步）</span></span>
+              <span style="display:flex;align-items:center;gap:8px">
+                <input type="range" id="card_glass_blur" min="0" max="20" step="1" style="width:140px;accent-color:#4f6ef7" />
+                <span id="card_glass_blur_val" style="min-width:36px;font-size:13px;color:#6b7280">5px</span>
+              </span>
+            </div>
+          </div>
+          <div class="row">
             <span class="txt"><b>预览指定主题</b><span>只影响右侧效果预览，不保存；选「按今天日期」则预览实际命中的背景</span></span>
             <div id="theme_pick" class="pk"></div>
           </div>

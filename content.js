@@ -12,11 +12,15 @@
   let festiveBg = true;
   let memorialBg = false;
   let defaultTheme = '';
-  chrome.storage.local.get({ card_festival_bg: true, card_memorial_bg: false, card_default_theme: '' }, (r) => {
+  let glassMode = false;
+  let glassBlur = 5;
+  chrome.storage.local.get({ card_festival_bg: true, card_memorial_bg: false, card_default_theme: '', card_glass_mode: false, card_glass_blur: 5 }, (r) => {
     if (r) {
       if (r.card_festival_bg === false) festiveBg = false;
       memorialBg = r.card_memorial_bg === true;
       defaultTheme = r.card_default_theme || '';
+      glassMode = r.card_glass_mode === true;
+      glassBlur = typeof r.card_glass_blur === 'number' ? r.card_glass_blur : 5;
     }
   });
   chrome.storage.onChanged.addListener((changes, area) => {
@@ -24,6 +28,8 @@
     if (changes.card_festival_bg) festiveBg = changes.card_festival_bg.newValue !== false;
     if (changes.card_memorial_bg) memorialBg = changes.card_memorial_bg.newValue === true;
     if (changes.card_default_theme) defaultTheme = changes.card_default_theme.newValue || '';
+    if (changes.card_glass_mode) glassMode = changes.card_glass_mode.newValue === true;
+    if (changes.card_glass_blur) glassBlur = typeof changes.card_glass_blur.newValue === 'number' ? changes.card_glass_blur.newValue : 5;
   });
 
   // 截图时临时隐藏扩展自身 UI：capture.js 与本脚本同隔离世界，直接走全局钩子。
@@ -338,7 +344,7 @@
     window.getSelection()?.removeAllRanges();
     pendingQuote = null;
     try {
-      const dataUrl = card.drawShareCard({ text: q.text, title: document.title, site: location.host, url: pageUrl(), festive: festiveBg, memorial: memorialBg, defaultTheme });
+      const dataUrl = card.drawShareCard({ text: q.text, title: document.title, site: location.host, url: pageUrl(), festive: festiveBg, memorial: memorialBg, defaultTheme, glass: glassMode, glassBlur });
       // 主题包随机换图：有可用包才出按钮，点一次随机抽一张重合成（避开当前这张）
       const actions = [];
       if (globalThis.__acThemePacks?.randomReady?.()) {
@@ -349,7 +355,7 @@
             const e = await globalThis.__acThemePacks.randomEntry(lastPack);
             if (!e) throw new Error('no-pack-art');
             lastPack = `${e.packId}:${e.key}`;
-            updateImg(card.drawShareCard({ text: q.text, title: document.title, site: location.host, url: pageUrl(), festive: festiveBg, memorial: memorialBg, defaultTheme, packArt: e }));
+            updateImg(card.drawShareCard({ text: q.text, title: document.title, site: location.host, url: pageUrl(), festive: festiveBg, memorial: memorialBg, defaultTheme, glass: glassMode, glassBlur, packArt: e }));
             return '换一张背景';
           },
         });

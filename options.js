@@ -43,6 +43,10 @@
     $('shot_brand').checked = !!cfg.shot_brand;
     $('card_festival_bg').checked = cfg.card_festival_bg !== false;
     $('card_memorial_bg').checked = cfg.card_memorial_bg === true;
+    $('card_glass_mode').checked = cfg.card_glass_mode === true;
+    $('card_glass_blur').value = typeof cfg.card_glass_blur === 'number' ? cfg.card_glass_blur : 5;
+    $('card_glass_blur_val').textContent = `${$('card_glass_blur').value}px`;
+    $('glass_blur_box').classList.toggle('off', cfg.card_glass_mode !== true);
     $('card_pack_shot_bg').checked = cfg.card_pack_shot_bg === true;
     $('card_pack_shot_desat').value = typeof cfg.card_pack_shot_desat === 'number' ? cfg.card_pack_shot_desat : 0;
     for (const p of packs) {
@@ -68,6 +72,8 @@
   $('shot_brand').addEventListener('change', (e) => save({ shot_brand: e.target.checked }));
   $('card_festival_bg').addEventListener('change', (e) => save({ card_festival_bg: e.target.checked }));
   $('card_memorial_bg').addEventListener('change', (e) => save({ card_memorial_bg: e.target.checked }));
+  $('card_glass_mode').addEventListener('change', (e) => save({ card_glass_mode: e.target.checked }));
+  $('card_glass_blur').addEventListener('input', (e) => save({ card_glass_blur: Number(e.target.value) }));
   $('card_pack_shot_bg').addEventListener('change', (e) => save({ card_pack_shot_bg: e.target.checked }));
   $('card_pack_shot_desat').addEventListener('input', (e) => save({ card_pack_shot_desat: Number(e.target.value) }));
   for (const el of document.querySelectorAll('input[name="pack_random_mode"]')) {
@@ -429,6 +435,8 @@
         url: SAMPLE_URL,
         festive: cfg.card_festival_bg !== false,
         memorial: cfg.card_memorial_bg === true,
+        glass: cfg.card_glass_mode === true,
+        glassBlur: typeof cfg.card_glass_blur === 'number' ? cfg.card_glass_blur : 5,
         themeId: previewTheme.startsWith('pack_') ? '' : previewTheme,
         defaultTheme: cfg.card_default_theme || '',
       };
