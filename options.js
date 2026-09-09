@@ -9,8 +9,9 @@
   let cfg = { ...card.SHOT_DEFAULTS };
 
   const packDefaults = Object.fromEntries(packs.map((p) => [`pack_${p.id}`, false]));
-  chrome.storage.local.get({ ...card.SHOT_DEFAULTS, ...packDefaults, pack_random_pick: false }, (v) => {
+  chrome.storage.local.get({ ...card.SHOT_DEFAULTS, ...packDefaults, pack_random_mode: '', pack_random_pick: false }, (v) => {
     cfg = { ...card.SHOT_DEFAULTS, ...v };
+    cfg.pack_random_mode = cfg.pack_random_mode || (cfg.pack_random_pick ? 'day' : ''); // 旧布尔开关迁移
     render();
     buildPickers(); // cfg 就绪后才能按包开关收录分组（同步阶段的 buildPickers 只会看到空 cfg）
   });
@@ -26,6 +27,7 @@
       if (changes[k]) { cfg[k] = changes[k].newValue; hit = true; }
     }
     if (changes.pack_random_pick) { cfg.pack_random_pick = changes.pack_random_pick.newValue; hit = true; }
+    if (changes.pack_random_mode) { cfg.pack_random_mode = changes.pack_random_mode.newValue || ''; hit = true; }
     if (hit) render();
   });
 
@@ -47,7 +49,8 @@
       const el = $(`pack_${p.id}`);
       if (el) el.checked = cfg[`pack_${p.id}`] === true;
     }
-    $('pack_random_pick').checked = cfg.pack_random_pick === true;
+    const modeEl = document.querySelector(`input[name="pack_random_mode"][value="${cfg.pack_random_mode || ''}"]`);
+    if (modeEl) modeEl.checked = true;
     $(cfg.shot_qr_overlay ? 'pos_overlay' : 'pos_strip').checked = true;
     $('cornerBox').classList.toggle('off', !cfg.shot_qr_overlay || !cfg.shot_qr);
     const corner = document.querySelector(`input[name="corner"][value="${cfg.shot_qr_corner}"]`);
@@ -67,7 +70,9 @@
   $('card_memorial_bg').addEventListener('change', (e) => save({ card_memorial_bg: e.target.checked }));
   $('card_pack_shot_bg').addEventListener('change', (e) => save({ card_pack_shot_bg: e.target.checked }));
   $('card_pack_shot_desat').addEventListener('input', (e) => save({ card_pack_shot_desat: Number(e.target.value) }));
-  $('pack_random_pick').addEventListener('change', (e) => save({ pack_random_pick: e.target.checked }));
+  for (const el of document.querySelectorAll('input[name="pack_random_mode"]')) {
+    el.addEventListener('change', () => save({ pack_random_mode: el.value }));
+  }
   // 主题包开关行由 buildPackRows 动态生成，监听也在此处绑定（行生成前 DOM 尚不存在）
   $('pos_overlay').addEventListener('change', () => save({ shot_qr_overlay: true }));
   $('pos_strip').addEventListener('change', () => save({ shot_qr_overlay: false }));
@@ -97,7 +102,7 @@
     clearTimeout(resetTimer);
     btn.classList.remove('danger');
     btn.textContent = '恢复默认设置';
-    const patch = { ...card.SHOT_DEFAULTS, ...Object.fromEntries(packs.map((p) => [`pack_${p.id}`, false])), pack_random_pick: false };
+    const patch = { ...card.SHOT_DEFAULTS, ...Object.fromEntries(packs.map((p) => [`pack_${p.id}`, false])), pack_random_mode: '', pack_random_pick: false };
     previewTheme = '';
     themePick.set('');
     save(patch);
