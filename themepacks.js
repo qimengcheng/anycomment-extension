@@ -29,6 +29,26 @@
         return this.base + '/flowers/' + file;
       },
     },
+    {
+      id: 'monet',
+      name: '莫奈画集',
+      desc: '每月一幅莫奈名画背景',
+      base: 'https://anycomment-monet-pack.pages.dev',
+      // manifest.months = { 'MM': { n: 画名, f: 文件名 } }；当月有收录返回 key，否则 null
+      resolve(manifest, date) {
+        if (!manifest || !manifest.months) return null;
+        const key = String(date.getMonth() + 1).padStart(2, '0');
+        return manifest.months[key] ? key : null;
+      },
+      entry(manifest, key) {
+        if (!manifest || !manifest.months) return null;
+        const e = manifest.months[key];
+        return e ? { name: e.n, file: e.f, label: `${Number(key)}月 · ${e.n}` } : null;
+      },
+      imageUrl(file) {
+        return this.base + '/monet/' + file;
+      },
+    },
   ];
 
   const state = new Map(); // id -> { enabled, manifest, images: Map(key -> HTMLImageElement) }
@@ -67,7 +87,7 @@
       const res = await fetch(pack.base + '/manifest.json', { cache: 'no-cache', signal: AbortSignal.timeout(8000) });
       if (res.ok) {
         const m = await res.json();
-        const rec = { version: m.version, count: m.count, days: m.days, fetched_at: Date.now() };
+        const rec = { version: m.version, count: m.count, days: m.days, months: m.months, fetched_at: Date.now() };
         chrome.storage.local.set({ [cacheKey]: rec });
         return rec;
       }
