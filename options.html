@@ -114,8 +114,15 @@
             <div class="row">
               <span class="txt"><b>磨砂模糊强度</b><span>卡片背后画面的模糊半径：0 = 只调透明度不模糊，数值越大玻璃越「雾」（拖动即时生效，右侧预览同步）</span></span>
               <span style="display:flex;align-items:center;gap:8px">
-                <input type="range" id="card_glass_blur" min="0" max="20" step="1" style="width:140px;accent-color:#4f6ef7" />
+                <input type="range" id="card_glass_blur" min="0" max="50" step="1" style="width:140px;accent-color:#4f6ef7" />
                 <span id="card_glass_blur_val" style="min-width:36px;font-size:13px;color:#6b7280">5px</span>
+              </span>
+            </div>
+            <div class="row">
+              <span class="txt"><b>玻璃透明度</b><span>卡片白色面板的不透明度：0 = 全透明只剩模糊背景，100 = 完全不透明白卡，数值越小玻璃越通透（拖动即时生效，右侧预览同步）</span></span>
+              <span style="display:flex;align-items:center;gap:8px">
+                <input type="range" id="card_glass_alpha" min="0" max="100" step="1" style="width:140px;accent-color:#4f6ef7" />
+                <span id="card_glass_alpha_val" style="min-width:36px;font-size:13px;color:#6b7280">55%</span>
               </span>
             </div>
           </div>

@@ -15,7 +15,8 @@
     card_pack_shot_bg: false, // 截图分享合成也使用主题包图案作背景（开启且当天命中时生效）
     card_pack_shot_desat: 0, // 主题包截图背景的去色程度：0=保留原色，100=纯黑白（用户可调）
     card_glass_mode: false, // 划线分享卡片磨砂玻璃模式：白底半透明 + 背后画面模糊（backdrop-filter blur 5px 的画布等价）
-    card_glass_blur: 5, // 磨砂玻璃的模糊半径（px，0~20）；0 = 只调透明度不模糊
+    card_glass_blur: 5, // 磨砂玻璃的模糊半径（px，0~50）；0 = 只调透明度不模糊
+    card_glass_alpha: 55, // 磨砂玻璃面板的白色不透明度（%，0~100）；0=全透明只剩模糊背景，100=实底白卡
   };
 
   const fontMain = (size, weight = 600) => `${weight} ${size}px "PingFang SC", "Microsoft YaHei", system-ui, sans-serif`;
@@ -181,7 +182,9 @@
   // 再叠一层半透明白面板 + 玻璃高光描边，模拟「卡片更透明、背景 blur」的磨砂质感。
   // 画布自绘以快照为源，无递归问题；ctx.filter 受当前变换影响，blur 值即 CSS 逻辑像素。
   // 依赖调用方先画完背景再调用本函数（与 paintWhiteCard 的调用位置一致）。
-  function paintGlassCard(ctx, x, y, w, h, r, blur = 5) {
+  // alpha 为白色面板不透明度（%，0~100）：越大越接近实底白卡，越小玻璃越通透（文字对比度随之下降）。
+  function paintGlassCard(ctx, x, y, w, h, r, blur = 5, alpha = 55) {
+    const a = Math.max(0, Math.min(100, typeof alpha === 'number' ? alpha : 55)) / 100;
     if (blur > 0) {
       ctx.save();
       roundRectPath(ctx, x, y, w, h, r);
@@ -197,13 +200,13 @@
     ctx.shadowColor = 'rgba(31,36,48,0.10)';
     ctx.shadowBlur = 24;
     ctx.shadowOffsetY = 8;
-    ctx.fillStyle = 'rgba(255,255,255,0.55)';
+    ctx.fillStyle = `rgba(255,255,255,${a})`;
     roundRectPath(ctx, x, y, w, h, r);
     ctx.fill();
     ctx.restore();
-    // 玻璃边缘高光：半透明白描边勾出磨砂面板轮廓
+    // 玻璃边缘高光：半透明白描边勾出磨砂面板轮廓，浓度随面板不透明度走（全透明时不再留突兀白边）
     ctx.save();
-    ctx.strokeStyle = 'rgba(255,255,255,0.65)';
+    ctx.strokeStyle = `rgba(255,255,255,${(0.35 + 0.3 * a).toFixed(3)})`;
     ctx.lineWidth = 1.5;
     roundRectPath(ctx, x + 0.75, y + 0.75, w - 1.5, h - 1.5, r);
     ctx.stroke();
@@ -3007,8 +3010,9 @@
   // packArt 为主题包（DLC）背景：显式传 { name, label, img }（设置页预览）或不传走自动路径
   // 读 themepacks.js 发布的 __acThemePack；优先级：显式 themeId > 主题包 > 节日/节气 > 默认。
   // glass=true 时走磨砂玻璃模式：白卡变半透明、背后画面模糊（card_glass_mode 设置）；
-  // glassBlur 为模糊半径 px（card_glass_blur 设置，0 = 只调透明度）
-  function drawShareCard({ text, title, site, url, festive = true, memorial = false, themeId = '', defaultTheme = '', packArt, glass = false, glassBlur = 5 }) {
+  // glassBlur 为模糊半径 px（card_glass_blur 设置，0 = 只调透明度）；
+  // glassAlpha 为白色面板不透明度 %（card_glass_alpha 设置，0~100）
+  function drawShareCard({ text, title, site, url, festive = true, memorial = false, themeId = '', defaultTheme = '', packArt, glass = false, glassBlur = 5, glassAlpha = 55 }) {
     // packArt 显式传值（设置页预览）> 自动路径 __acThemePack（当日命中）> 显式 themeId >
     // 当天节日/节气/纪念日 > defaultTheme 兜底（主题名或 pack_<id>:<key> 主题包条目，经
     // entrySync 同步解析——图片须已在引擎缓存，themepacks.js 会按 card_default_theme 预热）
@@ -3092,7 +3096,7 @@
       ctx.save();
       if (glass) {
         // 磨砂玻璃面板：面板背后的海报区域模糊，白底换半透明
-        paintGlassCard(ctx, cx, panelTop, cw, H - 28 - panelTop, r, glassBlur);
+        paintGlassCard(ctx, cx, panelTop, cw, H - 28 - panelTop, r, glassBlur, glassAlpha);
       } else {
         ctx.fillStyle = 'rgba(255,255,255,0.93)';
         ctx.shadowColor = 'rgba(31,36,48,0.12)';
@@ -3105,7 +3109,7 @@
       ctx.restore();
     } else {
       paintBackdrop(ctx, W, H, 1, theme);
-      if (glass) paintGlassCard(ctx, cx, cy, cw, ch, r, glassBlur);
+      if (glass) paintGlassCard(ctx, cx, cy, cw, ch, r, glassBlur, glassAlpha);
       else paintWhiteCard(ctx, cx, cy, cw, ch, r, 24, 8);
       paintCardAccent(ctx, theme, cx, cy, cw, ch, r, 1);
       paintThemeIcon(ctx, theme, W, H, 1);
