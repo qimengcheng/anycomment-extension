@@ -213,6 +213,32 @@
     ctx.restore();
   }
 
+  // 磨砂玻璃模式下文字的可读性兜底：面板越通透，文字背后的画面越"花"，给文字加一圈羽化白描边
+  // （白色 strokeText 两遍 + 高斯羽化，再叠原色文字）。强度由面板不透明度自动反推，用户无需调节：
+  //   不透明度 ≥70% → 完全关闭（接近实底白卡，视觉与原来一致）
+  //   不透明度越低  → t 越大，描边越宽越白（宽度上限 5px、浓度上限 95%，用户拍板档位）
+  function glassTextHalo(alpha) {
+    const a = typeof alpha === 'number' ? alpha : 55;
+    if (a >= 70) return { halo: 0, s: 0 };
+    const t = (70 - a) / 70;
+    return { halo: 1 + 4 * t, s: Math.min(0.95, 0.35 + 0.6 * t) };
+  }
+
+  // 羽化白描边原语：宽描一遍（羽化 halo）+ 窄描一遍（羽化 halo*0.45 收紧边缘），
+  // 由调用方在设好 font / textAlign / textBaseline 之后、fillText 之前调用。
+  // 与 paintGlassCard 一样，halo 受当前变换影响，传逻辑像素即可。
+  function frostText(ctx, text, x, y, halo, strength) {
+    if (!(halo > 0) || !(strength > 0)) return;
+    ctx.save();
+    ctx.shadowColor = `rgba(255,255,255,${(0.95 * strength).toFixed(3)})`;
+    ctx.strokeStyle = `rgba(255,255,255,${(0.92 * strength).toFixed(3)})`;
+    ctx.lineJoin = 'round';
+    ctx.miterLimit = 2;
+    ctx.lineWidth = halo;
+    for (const b of [halo, halo * 0.45]) { ctx.shadowBlur = b; ctx.strokeText(text, x, y); }
+    ctx.restore();
+  }
+
   // ========== 节日 / 节气主题背景 ==========
   // 按当天日期命中，优先级：纪念日（开关开启时）> 公历节日（含母亲节/父亲节/感恩节现算）>
   // 农历节日/除夕 > 二十四节气 > 默认蓝渐变。
@@ -3115,6 +3141,11 @@
       paintThemeIcon(ctx, theme, W, H, 1);
     }
 
+    // 磨砂玻璃模式下所有文字统一走 put（羽化白描边 + 原色填充），强度由面板不透明度自动反推；
+    // 装饰性大引号是淡色水印，不需要可读性，保持原样不描边
+    const G = glass ? glassTextHalo(glassAlpha) : { halo: 0, s: 0 };
+    const put = (t, x, y) => { frostText(ctx, t, x, y, G.halo, G.s); ctx.fillText(t, x, y); };
+
     // 顶部品牌条：蓝点 + AnyComment 划线分享（主题包版式落在面板顶部，右侧加日期·条目名）
     const brandY = usePack ? panelTop + 44 : cy + 44;
     ctx.fillStyle = '#2f6bff';
@@ -3122,10 +3153,10 @@
     ctx.font = fontMain(15, 500);
     ctx.fillStyle = '#8a90a5';
     ctx.textBaseline = 'middle';
-    ctx.fillText('AnyComment · 划线分享', cx + 46, brandY + 1);
+    put('AnyComment · 划线分享', cx + 46, brandY + 1);
     if (usePack) {
       ctx.textAlign = 'right';
-      ctx.fillText(pack.label || pack.name, W - PAD, brandY + 1);
+      put(pack.label || pack.name, W - PAD, brandY + 1);
       ctx.textAlign = 'left';
     }
 
@@ -3138,20 +3169,21 @@
     ctx.font = fontMain(30, 600);
     ctx.fillStyle = '#1f2430';
     ctx.textBaseline = 'top';
-    lines.forEach((ln, i) => ctx.fillText(ln, PAD, quoteTop + i * lineH - 20));
+    lines.forEach((ln, i) => put(ln, PAD, quoteTop + i * lineH - 20));
 
     // 出处：页面标题 + 站点（右侧留给二维码）
-    ctx.strokeStyle = '#eceef4';
+    // 磨砂玻璃下分隔线也换成白色——深色画面里浅灰线会比文字先消失
+    ctx.strokeStyle = G.halo > 0 ? 'rgba(255,255,255,0.85)' : '#eceef4';
     ctx.beginPath(); ctx.moveTo(PAD, dividerY); ctx.lineTo(W - PAD, dividerY); ctx.stroke();
     ctx.font = fontMain(17, 500);
     ctx.fillStyle = '#4b5563';
     // 前缀也要计入测量，否则长标题会钻到二维码底下
     const srcText = `—— ${title || site || ''}`;
-    ctx.fillText(wrapText(ctx, srcText, (qr ? qrLeft - PAD : W - PAD * 2) - 20, 1)[0] || '', PAD, srcTitleY);
+    put(wrapText(ctx, srcText, (qr ? qrLeft - PAD : W - PAD * 2) - 20, 1)[0] || '', PAD, srcTitleY);
     ctx.font = fontMain(14, 400);
     ctx.fillStyle = '#a5abc0';
     const domain = (site || '').replace(/^www\./, '');
-    ctx.fillText(wrapText(ctx, domain, (qr ? qrLeft - PAD : W - PAD * 2) - 20, 1)[0] || '', PAD, srcDomainY);
+    put(wrapText(ctx, domain, (qr ? qrLeft - PAD : W - PAD * 2) - 20, 1)[0] || '', PAD, srcDomainY);
 
     if (qr) {
       // 二维码白底（含静默区）+ 整像素模块
@@ -3171,13 +3203,13 @@
       ctx.font = fontMain(13, 400);
       ctx.fillStyle = '#a5abc0';
       const hint = '扫码阅读原文';
-      ctx.fillText(hint, qrLeft + (qrPx - ctx.measureText(hint).width) / 2, hintY);
+      put(hint, qrLeft + (qrPx - ctx.measureText(hint).width) / 2, hintY);
     } else {
       const d = new Date();
       const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       ctx.font = fontMain(13, 400);
       ctx.fillStyle = '#a5abc0';
-      ctx.fillText(ds, W - PAD - ctx.measureText(ds).width, srcDomainY);
+      put(ds, W - PAD - ctx.measureText(ds).width, srcDomainY);
     }
 
     return canvas.toDataURL('image/png');
