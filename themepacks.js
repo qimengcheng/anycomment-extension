@@ -73,6 +73,28 @@
         return this.base + '/monet-k3/' + file;
       },
     },
+    {
+      id: 'star',
+      name: '星海漫游',
+      desc: '每周一个深空天体，从太阳系航行到宇宙尺度',
+      base: 'https://anycomment-star-pack.pages.dev',
+      // manifest.weeks = { 'NN': { n: 天体名, f: 文件名 } }；NN = ISO 周序号（与莫奈画集同结构）
+      resolve(manifest, date) {
+        if (!manifest || !manifest.weeks) return null;
+        const key = String(Math.min(52, isoWeek(date))).padStart(2, '0');
+        return manifest.weeks[key] ? key : null;
+      },
+      entry(manifest, key) {
+        if (!manifest || !manifest.weeks) return null;
+        const e = manifest.weeks[key];
+        if (!e) return null;
+        const n = displayName(e.n);
+        return { name: n, file: e.f, label: `第${Number(key)}周 · ${n}` };
+      },
+      imageUrl(file) {
+        return this.base + '/star/' + file;
+      },
+    },
   ];
 
   const state = new Map(); // id -> { enabled, manifest, images: Map(key -> HTMLImageElement) }

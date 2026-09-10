@@ -1,13 +1,14 @@
 {
   "manifest_version": 3,
   "name": "AnyComment 网页评论",
-  "version": "1.76.0",
+  "version": "1.77.0",
   "description": "在任意网页右侧展开评论区，发表评论、回复他人、参与讨论。",
   "permissions": ["storage", "alarms", "downloads", "clipboardWrite", "debugger"],
   "host_permissions": [
     "https://anycomment.qimengcheng-47e.workers.dev/*",
     "https://anycomment-flower-pack.pages.dev/*",
-    "https://anycomment-monet-pack.pages.dev/*"
+    "https://anycomment-monet-pack.pages.dev/*",
+    "https://anycomment-star-pack.pages.dev/*"
   ],
   "background": {
     "service_worker": "background.js"
