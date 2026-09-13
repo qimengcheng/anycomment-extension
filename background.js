@@ -190,11 +190,3 @@ function compareVersion(a, b) {
   }
   return 0;
 }
-
-// 监听来自 popup 的手动检查更新请求
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
-  if (msg.type === 'check-update-now') {
-    checkUpdate().then(() => sendResponse({ ok: true }));
-    return true; // 异步响应
-  }
-});
