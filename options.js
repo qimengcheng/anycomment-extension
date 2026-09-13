@@ -31,10 +31,23 @@
     if (hit) render();
   });
 
+  // 滑块防抖计时器（声明在 save 之前，避免调用时序变化触发 TDZ）
+  let sliderTimer = null;
+
   function save(patch) {
+    // 取消挂起的滑块防抖写回，否则其延迟任务可能把旧值覆盖到之后的保存（如恢复默认）之后
+    clearTimeout(sliderTimer);
     cfg = { ...cfg, ...patch };
     chrome.storage.local.set(patch);
     render();
+  }
+
+  // 滑块拖动专用：只即时更新数值标签，存储与整页重绘防抖合并（拖动逐事件全量 render 会反复重画预览并写入风暴）
+  function saveSlider(key, val, labelEl, fmt) {
+    cfg = { ...cfg, [key]: val };
+    if (labelEl) labelEl.textContent = fmt(val);
+    clearTimeout(sliderTimer);
+    sliderTimer = setTimeout(() => save({ [key]: cfg[key] }), 250);
   }
 
   function render() {
@@ -75,10 +88,10 @@
   $('card_festival_bg').addEventListener('change', (e) => save({ card_festival_bg: e.target.checked }));
   $('card_memorial_bg').addEventListener('change', (e) => save({ card_memorial_bg: e.target.checked }));
   $('card_glass_mode').addEventListener('change', (e) => save({ card_glass_mode: e.target.checked }));
-  $('card_glass_blur').addEventListener('input', (e) => save({ card_glass_blur: Number(e.target.value) }));
-  $('card_glass_alpha').addEventListener('input', (e) => save({ card_glass_alpha: Number(e.target.value) }));
+  $('card_glass_blur').addEventListener('input', (e) => saveSlider('card_glass_blur', Number(e.target.value), $('card_glass_blur_val'), (v) => `${v}px`));
+  $('card_glass_alpha').addEventListener('input', (e) => saveSlider('card_glass_alpha', Number(e.target.value), $('card_glass_alpha_val'), (v) => `${v}%`));
   $('card_pack_shot_bg').addEventListener('change', (e) => save({ card_pack_shot_bg: e.target.checked }));
-  $('card_pack_shot_desat').addEventListener('input', (e) => save({ card_pack_shot_desat: Number(e.target.value) }));
+  $('card_pack_shot_desat').addEventListener('input', (e) => saveSlider('card_pack_shot_desat', Number(e.target.value), null, null));
   for (const el of document.querySelectorAll('input[name="pack_random_mode"]')) {
     el.addEventListener('change', () => save({ pack_random_mode: el.value }));
   }

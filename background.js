@@ -5,6 +5,8 @@ chrome.runtime.onInstalled.addListener(() => {
       chrome.storage.local.set({ enabled: true });
     }
   });
+  // 闹钟在生命周期事件中创建（模块顶层会在 service worker 每次唤醒时重复执行）
+  chrome.alarms.create('check-update', { periodInMinutes: 1440 });
   // 安装后立即检查一次更新
   checkUpdate();
 });
@@ -136,13 +138,13 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   }
 });
 
-// 浏览器启动时检查更新
+// 浏览器启动时检查更新（旧版 Chrome 闹钟不跨会话，这里幂等补建一次）
 chrome.runtime.onStartup.addListener(() => {
+  chrome.alarms.create('check-update', { periodInMinutes: 1440 });
   checkUpdate();
 });
 
-// 每天检查一次更新（闹钟）
-chrome.alarms.create('check-update', { periodInMinutes: 1440 });
+// 每天检查一次更新（闹钟创建见上方 onInstalled/onStartup）
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === 'check-update') {
     checkUpdate();
