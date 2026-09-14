@@ -223,6 +223,11 @@
   }
 
   // 获取选区前的上下文文字（跨节点向前收集，选区落在链接/段落开头时也能拿到上文）
+  // WALKER_VISIT_CAP 限制遍历的文本节点数：选区靠前时 previousNode 会扫过几乎整个文档，
+  // 收集满 100 字才停无法约束这种最坏情况；到上限就用已收集的内容（上下文本就是尽力而为，
+  // 定位还有 path/index 强兜底锚点）
+  const WALKER_VISIT_CAP = 4000;
+
   function getContextBefore(range, maxLen) {
     try {
       let collected = '';
@@ -235,9 +240,11 @@
           ? range.startContainer
           : range.startContainer;
         let n;
+        let visited = 0;
         const prev = [];
         let remaining = maxLen - collected.length;
         while ((n = walker.previousNode()) && remaining > 0) {
+          if (++visited > WALKER_VISIT_CAP) break;
           if (!n.textContent || !n.textContent.trim()) continue;
           const tag = n.parentElement ? n.parentElement.tagName : '';
           if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT' || tag === 'TEXTAREA' || tag === 'INPUT') continue;
@@ -263,8 +270,10 @@
           ? range.endContainer
           : range.endContainer;
         let n;
+        let visited = 0;
         let remaining = maxLen - collected.length;
         while ((n = walker.nextNode()) && remaining > 0) {
+          if (++visited > WALKER_VISIT_CAP) break;
           if (!n.textContent || !n.textContent.trim()) continue;
           const tag = n.parentElement ? n.parentElement.tagName : '';
           if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT' || tag === 'TEXTAREA' || tag === 'INPUT') continue;
