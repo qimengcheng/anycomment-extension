@@ -2793,45 +2793,30 @@
     ctx.fill();
     ctx.restore();
   }
-  // 卷曲箭头 ↷（参考图左上那种手绘回旋箭头）
-  function doodleCurl(ctx, x, y, s, color) {
+  // 四角星光 ✦：中心收腰的凹边四角星，比直线/箭头更柔和耐看。r=外接半径，color/alpha 控制浓淡。
+  function sparkle(ctx, x, y, r, color, alpha) {
     ctx.save();
-    ctx.strokeStyle = color; ctx.lineWidth = Math.max(2, s * 0.13); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = color;
+    const c = r * 0.14; // 控制点贴近中心 → 四边内凹成"闪光"形
     ctx.beginPath();
-    ctx.moveTo(x, y - s * 0.55);
-    ctx.bezierCurveTo(x - s * 0.8, y - s * 0.5, x - s * 0.75, y + s * 0.55, x + s * 0.05, y + s * 0.5);
-    ctx.bezierCurveTo(x + s * 0.62, y + s * 0.45, x + s * 0.55, y - s * 0.25, x + s * 0.02, y - s * 0.18);
-    ctx.stroke();
-    const ax = x + s * 0.02, ay = y - s * 0.18;
-    ctx.beginPath();
-    ctx.moveTo(ax - s * 0.26, ay - s * 0.05); ctx.lineTo(ax, ay); ctx.lineTo(ax + s * 0.02, ay - s * 0.3);
-    ctx.stroke();
+    ctx.moveTo(x, y - r);
+    ctx.quadraticCurveTo(x + c, y - c, x + r, y);
+    ctx.quadraticCurveTo(x + c, y + c, x, y + r);
+    ctx.quadraticCurveTo(x - c, y + c, x - r, y);
+    ctx.quadraticCurveTo(x - c, y - c, x, y - r);
+    ctx.closePath();
+    ctx.fill();
     ctx.restore();
   }
-  // 波浪线（参考图右上那种手绘抖动短线）
-  function doodleSquiggle(ctx, x, y, w, color) {
-    ctx.save();
-    ctx.strokeStyle = color; ctx.lineWidth = Math.max(2, w * 0.055); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
-    const n = 4, seg = w / n, a = w * 0.07;
-    ctx.beginPath(); ctx.moveTo(x, y);
-    for (let i = 0; i < n; i++) ctx.quadraticCurveTo(x + seg * (i + 0.5), y + (i % 2 ? a : -a), x + seg * (i + 1), y);
-    ctx.stroke();
-    ctx.restore();
-  }
-  // 粗下划线（马克笔一笔带过，两端圆头）
-  function doodleDash(ctx, x, y, w, color) {
-    ctx.save();
-    ctx.globalAlpha = 0.85; ctx.strokeStyle = color; ctx.lineWidth = Math.max(4, w * 0.14); ctx.lineCap = 'round';
-    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + w, y - w * 0.03); ctx.stroke();
-    ctx.restore();
-  }
-  // 手绘装饰：三处点缀统一落在卡片顶部留白带（品牌行与引文之间，非主题包版式才有这块空档），
-  // 避开引文正文、出处与二维码，低存在感不抢可读性。
+  // 手绘装饰：右上角一簇大小错落的手绘星光（金色、半透明），比零散的箭头/波浪线/粗线更整洁耐看，
+  // 低存在感不抢正文与二维码。位置固定（天然确定，重绘逐像素一致）。
   function paintDoodle(ctx, W, H, rng) {
-    const gold = '#f4b942', yellow = '#ffd23f';
-    doodleCurl(ctx, W - 150, 88, 24, gold);
-    doodleSquiggle(ctx, W - 98, 60, 46, gold);
-    doodleDash(ctx, 250, 94, 42, yellow);
+    const gold = '#f4c14e';
+    sparkle(ctx, W - 74, 78, 17, gold, 0.6);
+    sparkle(ctx, W - 114, 100, 9, gold, 0.55);
+    sparkle(ctx, W - 56, 114, 7, gold, 0.5);
+    sparkle(ctx, W - 98, 60, 5, gold, 0.5);
   }
 
   globalThis.__acCardArt = { paintBackdrop, paintCardAccent, resolveTheme, resolveDayTheme, themeDateInYear, THEME_LIST, paintMarker, paintDoodle, MARKER_PALETTE };
