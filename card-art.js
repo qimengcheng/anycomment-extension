@@ -2761,7 +2761,8 @@
     const j = () => (rng() - 0.5) * Math.min(1.5, thick * 0.08); // 极轻微手绘抖动
     ctx.save();
     ctx.globalCompositeOperation = 'multiply';
-    ctx.fillStyle = '#ffd21a';
+    ctx.globalAlpha = 0.8; // 略降不透明度，笔带更通透不发闷
+    ctx.fillStyle = '#ffe873'; // 浅柠檬黄（此前 #ffd21a 偏深）
     ctx.beginPath();
     ctx.moveTo(x + skew + j(), top + j());
     ctx.lineTo(x + w + skew + j(), top + j());
