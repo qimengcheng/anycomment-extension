@@ -15,7 +15,9 @@
   let glassMode = false;
   let glassBlur = 5;
   let glassAlpha = 55;
-  chrome.storage.local.get({ card_festival_bg: true, card_memorial_bg: false, card_default_theme: '', card_glass_mode: false, card_glass_blur: 5, card_glass_alpha: 55 }, (r) => {
+  let markerOn = true;
+  let doodleOn = true;
+  chrome.storage.local.get({ card_festival_bg: true, card_memorial_bg: false, card_default_theme: '', card_glass_mode: false, card_glass_blur: 5, card_glass_alpha: 55, card_marker: true, card_doodle: true }, (r) => {
     if (r) {
       if (r.card_festival_bg === false) festiveBg = false;
       memorialBg = r.card_memorial_bg === true;
@@ -23,6 +25,8 @@
       glassMode = r.card_glass_mode === true;
       glassBlur = typeof r.card_glass_blur === 'number' ? r.card_glass_blur : 5;
       glassAlpha = typeof r.card_glass_alpha === 'number' ? r.card_glass_alpha : 55;
+      markerOn = r.card_marker !== false;
+      doodleOn = r.card_doodle !== false;
     }
   });
   chrome.storage.onChanged.addListener((changes, area) => {
@@ -33,6 +37,8 @@
     if (changes.card_glass_mode) glassMode = changes.card_glass_mode.newValue === true;
     if (changes.card_glass_blur) glassBlur = typeof changes.card_glass_blur.newValue === 'number' ? changes.card_glass_blur.newValue : 5;
     if (changes.card_glass_alpha) glassAlpha = typeof changes.card_glass_alpha.newValue === 'number' ? changes.card_glass_alpha.newValue : 55;
+    if (changes.card_marker) markerOn = changes.card_marker.newValue !== false;
+    if (changes.card_doodle) doodleOn = changes.card_doodle.newValue !== false;
   });
 
   // 截图时临时隐藏扩展自身 UI：capture.js 与本脚本同隔离世界，直接走全局钩子。
@@ -348,7 +354,29 @@
     pendingQuote = null;
   }
 
-  // 划线分享：生成卡片 + 预览浮层（下载/复制），登录态下记录并即时标虚线
+  // 命中预览卡片上被点击的词块：分数坐标 → 卡片像素 → 定位到 "行:块" key（供点词切换高亮）。
+  // 依赖最近一次带划线 drawShareCard 记录的布局，绘制与命中同一套数字，点哪划哪不会跑偏
+  function hitQuoteToken(fx, fy) {
+    const L = card.lastQuoteLayout();
+    if (!L) return null;
+    const cx = fx * L.W, cy = fy * L.H;
+    for (let i = 0; i < L.tokens.length; i++) {
+      const yTop = L.quoteTop + i * L.lineH - 20;
+      if (cy < yTop - 6 || cy > yTop + L.fs + 6) continue;
+      const line = L.tokens[i];
+      for (let ti = 0; ti < line.length; ti++) {
+        const tok = line[ti];
+        if (/^\s+$/.test(tok.t)) continue;
+        const x0 = L.PAD + tok.x, x1 = x0 + tok.w;
+        if (cx >= x0 - 1 && cx <= x1 + 1) return `${i}:${ti}`;
+      }
+      return null; // 落在该行文字区但不在具体词块上
+    }
+    return null;
+  }
+
+  // 划线分享：生成卡片 + 预览浮层（下载/复制），登录态下记录并即时标虚线。
+  // 开启「划线强调」时，卡片给关键词上小红书风荧光笔划线，预览里直接点卡片上的词即可增删高亮
   function onQuoteShare() {
     if (!pendingQuote) return;
     const q = pendingQuote;
@@ -356,7 +384,15 @@
     window.getSelection()?.removeAllRanges();
     pendingQuote = null;
     try {
-      const dataUrl = card.drawShareCard({ text: q.text, title: document.title, site: location.host, url: pageUrl(), festive: festiveBg, memorial: memorialBg, defaultTheme, glass: glassMode, glassBlur, glassAlpha });
+      const useMarker = markerOn;
+      let hl = useMarker ? card.autoHighlight(q.text) : []; // 当前高亮词块 key（可被用户点选增删）
+      let doodle = useMarker && doodleOn; // 手绘装饰开关（预览里可临时切换）
+      const render = () => card.drawShareCard({
+        text: q.text, title: document.title, site: location.host, url: pageUrl(),
+        festive: festiveBg, memorial: memorialBg, defaultTheme, glass: glassMode, glassBlur, glassAlpha,
+        marker: useMarker, doodle, highlight: hl,
+      });
+      const dataUrl = render();
       // 主题包随机换图：有可用包才出按钮，点一次随机抽一张重合成（避开当前这张）
       const actions = [];
       if (globalThis.__acThemePacks?.randomReady?.()) {
@@ -367,12 +403,34 @@
             const e = await globalThis.__acThemePacks.randomEntry(lastPack);
             if (!e) throw new Error('no-pack-art');
             lastPack = `${e.packId}:${e.key}`;
-            updateImg(card.drawShareCard({ text: q.text, title: document.title, site: location.host, url: pageUrl(), festive: festiveBg, memorial: memorialBg, defaultTheme, glass: glassMode, glassBlur, glassAlpha, packArt: e }));
+            updateImg(card.drawShareCard({ text: q.text, title: document.title, site: location.host, url: pageUrl(), festive: festiveBg, memorial: memorialBg, defaultTheme, glass: glassMode, glassBlur, glassAlpha, packArt: e, marker: useMarker, doodle, highlight: hl }));
             return '换一张背景';
           },
         });
       }
-      card.showPreview(shadow, dataUrl, { alt: '划线分享卡片预览', actions });
+      if (useMarker) {
+        actions.push({
+          label: doodle ? '装饰：开' : '装饰：关',
+          onClick: (updateImg) => { doodle = !doodle; updateImg(render()); return doodle ? '装饰：开' : '装饰：关'; },
+        });
+        actions.push({
+          label: '重置划线',
+          onClick: (updateImg) => { hl = card.autoHighlight(q.text); updateImg(render()); return '重置划线'; },
+        });
+      }
+      card.showPreview(shadow, dataUrl, {
+        alt: '划线分享卡片预览',
+        actions,
+        // 走点词交互时关掉手绘标注层（避免抢点击）；未开划线强调则保留原有标注能力
+        annotate: !useMarker,
+        onImageClick: useMarker ? (fx, fy, { updateImg }) => {
+          const key = hitQuoteToken(fx, fy);
+          if (!key) return;
+          const i = hl.indexOf(key);
+          if (i >= 0) hl.splice(i, 1); else hl.push(key);
+          updateImg(render());
+        } : undefined,
+      });
       recordQuoteShare(q); // 记录划线（登录态），并即时给页面加虚线
     } catch (e) {
       showExtToast('生成分享卡片失败');

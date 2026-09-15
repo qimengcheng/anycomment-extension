@@ -7,8 +7,8 @@
   const A = globalThis.__acCardArt, AI = globalThis.__acCardArtInternals;
   const { fontMain, wrapText, roundRectPath, buildQrMatrix, drawQrModules, paintWhiteCard, SHOT_DEFAULTS, fmtShotTime, cleanUrlForQr } = C;
   const { paintGlassCard, glassTextHalo, frostText } = CI;
-  const { paintBackdrop, paintCardAccent, resolveTheme, resolveDayTheme, themeDateInYear, THEME_LIST } = A;
-  const { paintThemeIcon } = AI;
+  const { paintBackdrop, paintCardAccent, resolveTheme, resolveDayTheme, themeDateInYear, THEME_LIST, paintMarker, paintDoodle } = A;
+  const { paintThemeIcon, makeRng } = AI;
 
   // 主题包图片整体平均色（按 1x1 缩绘取样），用于海报外留白的底色延伸
   // 主题包截图背景呈现参数（v1.57 用户调参器定稿）：曲线 LUT 控制点、提亮、截图垫白、白底浓度
@@ -58,6 +58,45 @@
     return img.__acAvg;
   }
 
+  // ===== 划线强调（小红书风）：把已换行的引用文字拆成带坐标的词块 =====
+  // 与 wrapText 同一 token 正则，逐块累加 measureText 得到行内 x 偏移；drawShareCard 逐块绘制、
+  // 预览层按同一坐标命中「点词切换高亮」，绘制与命中共用一套数字，绝不跑偏。
+  const QUOTE_FONT = 30, QUOTE_W = 720, QUOTE_PAD = 56, QUOTE_LINEH = 48, QUOTE_TOP = 150;
+  const QUOTE_TOKEN_RE = /[A-Za-z0-9]+(?:['’][A-Za-z0-9]+)*|\s+|\S/gu;
+  function quoteMeasurer() {
+    const meas = document.createElement('canvas').getContext('2d');
+    meas.font = fontMain(QUOTE_FONT, 600);
+    return meas;
+  }
+  function tokenizeLine(ctx, line) {
+    const toks = String(line).match(QUOTE_TOKEN_RE) || [];
+    let x = 0;
+    const out = [];
+    for (const t of toks) {
+      const w = ctx.measureText(t).width;
+      out.push({ t, x, w });
+      x += w;
+    }
+    return out;
+  }
+  // 引用文字的词块布局：{ lines: [字符串], tokens: [[{t,x,w}]] }，绘制与命中测试共用
+  function buildQuoteLayout(text) {
+    const meas = quoteMeasurer();
+    const lines = wrapText(meas, text, QUOTE_W - QUOTE_PAD * 2, 10);
+    return { lines, tokens: lines.map((ln) => tokenizeLine(meas, ln)) };
+  }
+  // 自动识别关键词：命中「英文/数字词（去符号后长度≥2）」，中文等其余词留给用户点选。
+  // 返回 key 列表 "行:块"，与 buildQuoteLayout 坐标口径一致。
+  function autoHighlightKeys(text) {
+    const { tokens } = buildQuoteLayout(text);
+    const keys = [];
+    tokens.forEach((line, li) => line.forEach((tok, ti) => {
+      if (/^[A-Za-z0-9]/.test(tok.t) && tok.t.replace(/[^A-Za-z0-9]/g, '').length >= 2) keys.push(`${li}:${ti}`);
+    }));
+    return keys;
+  }
+  let LAST_QUOTE = null; // 最近一次带划线的 drawShareCard 布局，供预览层命中测试
+
   // 用 Canvas 绘制金句卡片，返回 dataURL(2x)。
   // festive=false 关掉节日/节气背景；memorial 开启纪念日主题（优先于节日）；
   // themeId 指定主题名（设置页预览用，优先级最高）；
@@ -67,7 +106,7 @@
   // glass=true 时走磨砂玻璃模式：白卡变半透明、背后画面模糊（card_glass_mode 设置）；
   // glassBlur 为模糊半径 px（card_glass_blur 设置，0 = 只调透明度）；
   // glassAlpha 为白色面板不透明度 %（card_glass_alpha 设置，0~100）
-  function drawShareCard({ text, title, site, url, festive = true, memorial = false, themeId = '', defaultTheme = '', packArt, glass = false, glassBlur = 5, glassAlpha = 55 }) {
+  function drawShareCard({ text, title, site, url, festive = true, memorial = false, themeId = '', defaultTheme = '', packArt, glass = false, glassBlur = 5, glassAlpha = 55, marker = false, doodle = false, highlight = null }) {
     // packArt 显式传值（设置页预览）> 自动路径 __acThemePack（当日命中）> 显式 themeId >
     // 当天节日/节气/纪念日 > defaultTheme 兜底（主题名或 pack_<id>:<key> 主题包条目，经
     // entrySync 同步解析——图片须已在引擎缓存，themepacks.js 会按 card_default_theme 预热）
@@ -168,6 +207,7 @@
       else paintWhiteCard(ctx, cx, cy, cw, ch, r, 24, 8);
       paintCardAccent(ctx, theme, cx, cy, cw, ch, r, 1);
       paintThemeIcon(ctx, theme, W, H, 1);
+      if (doodle) paintDoodle(ctx, W, H, makeRng(((text ? text.length : 0) + 7) >>> 0));
     }
 
     // 磨砂玻璃模式下所有文字统一走 put（羽化白描边 + 原色填充），强度由面板不透明度自动反推；
@@ -194,11 +234,42 @@
     ctx.fillStyle = 'rgba(47,107,255,0.18)';
     ctx.fillText('“', PAD - 8, quoteTop - 22);
 
-    // 引用文字
+    // 引用文字：marker 开启时逐词块绘制（先画荧光笔带、再压文字），并记录布局供预览点词命中；
+    // 关闭时走原来的整行绘制，逐像素不变、零回归
     ctx.font = fontMain(30, 600);
     ctx.fillStyle = '#1f2430';
     ctx.textBaseline = 'top';
-    lines.forEach((ln, i) => put(ln, PAD, quoteTop + i * lineH - 20));
+    if (marker) {
+      const { tokens } = buildQuoteLayout(text);
+      const hlSet = new Set(Array.isArray(highlight) ? highlight : autoHighlightKeys(text));
+      // 先画高亮笔带（同行连续命中词块合并成一条），文字随后压上保持清晰
+      tokens.forEach((line, i) => {
+        const yTop = quoteTop + i * lineH - 20;
+        let run = null;
+        const flush = () => {
+          if (run) {
+            const seed = (i * 100003 + Math.round(run.x0) * 31 + Math.round(run.x1)) >>> 0;
+            paintMarker(ctx, PAD + run.x0, yTop, run.x1 - run.x0, 30, makeRng(seed));
+          }
+          run = null;
+        };
+        line.forEach((tok, ti) => {
+          if (hlSet.has(`${i}:${ti}`)) {
+            if (!run) run = { x0: tok.x, x1: tok.x + tok.w };
+            else run.x1 = tok.x + tok.w;
+          } else flush();
+        });
+        flush();
+      });
+      tokens.forEach((line, i) => {
+        const yTop = quoteTop + i * lineH - 20;
+        line.forEach((tok) => put(tok.t, PAD + tok.x, yTop));
+      });
+      LAST_QUOTE = { W, H, PAD, quoteTop, lineH, fs: 30, tokens };
+    } else {
+      LAST_QUOTE = null;
+      lines.forEach((ln, i) => put(ln, PAD, quoteTop + i * lineH - 20));
+    }
 
     // 出处：页面标题 + 站点（右侧留给二维码）
     // 磨砂玻璃下分隔线也换成白色——深色画面里浅灰线会比文字先消失
@@ -617,6 +688,16 @@
       }
     };
     if (anno) anno.onChange(autoCopy);
+    // 点卡片切换划线高亮：仅当调用方提供 onImageClick（分享卡走此交互，此时标注层已关闭）。
+    // 传回的是相对图片的分数坐标（0~1），由调用方换算到卡片像素做词块命中；updateImg 供其重绘并自动回写剪贴板
+    if (typeof opts.onImageClick === 'function' && view.addEventListener) {
+      view.style.cursor = 'crosshair';
+      view.addEventListener('click', (e) => {
+        const rect = view.getBoundingClientRect();
+        if (!rect.width || !rect.height) return;
+        opts.onImageClick((e.clientX - rect.left) / rect.width, (e.clientY - rect.top) / rect.height, { updateImg });
+      });
+    }
     const btnClose = document.createElement('button');
     btnClose.className = 'ac-share-btn ac-share-close';
     btnClose.textContent = '关闭';
@@ -656,5 +737,6 @@
     drawQrModules, paintBackdrop, paintWhiteCard, paintCardAccent, resolveTheme,
     resolveDayTheme, themeDateInYear, THEME_LIST, fmtShotTime, drawShareCard,
     composeScreenshot, planShot, showPreview, PREVIEW_CSS,
+    autoHighlight: autoHighlightKeys, lastQuoteLayout: () => LAST_QUOTE,
   };
 })();

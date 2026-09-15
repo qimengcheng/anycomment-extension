@@ -2746,8 +2746,79 @@
     return '';
   }
 
-  globalThis.__acCardArt = { paintBackdrop, paintCardAccent, resolveTheme, resolveDayTheme, themeDateInYear, THEME_LIST };
-  globalThis.__acCardArtInternals = { paintThemeIcon };
+  // ===== 小红书风「划线强调」原语（v1.83.0）：荧光笔划线 + 手绘装饰 =====
+  // 全部用调用方传入的固定种子 rng，同一段文字同一尺寸重绘逐像素一致（预览不闪烁）。
+  // 荧光笔：文字下方偏底的一道手绘黄色笔带，画在文字之前（字压在笔带上保持清晰），
+  // 上下沿带轻微抖动、两端圆头，模拟马克笔按压。x/y 为词块左上角，fs 为字号。
+  function paintMarker(ctx, x, y, w, fs, rng) {
+    if (!(w > 0)) return;
+    const top = y + fs * 0.58, bot = y + fs * 0.98;
+    const h = bot - top;
+    const amp = Math.max(0.8, h * 0.16);
+    const seg = Math.max(6, Math.min(20, w / 5));
+    const j = () => (rng() - 0.5) * amp;
+    ctx.save();
+    ctx.globalAlpha = 0.82;
+    ctx.fillStyle = '#ffd23f';
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x, top + j());
+    for (let px = x + seg; px < x + w; px += seg) ctx.lineTo(px, top + j());
+    ctx.lineTo(x + w, top + j());
+    ctx.lineTo(x + w, bot + j());
+    for (let px = x + w - seg; px > x; px -= seg) ctx.lineTo(px, bot + j());
+    ctx.lineTo(x, bot + j());
+    ctx.closePath();
+    ctx.fill();
+    const my = (top + bot) / 2, mr = h * 0.44;
+    ctx.beginPath(); ctx.arc(x, my, mr, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x + w, my, mr, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  }
+  // 卷曲箭头 ↷（参考图左上那种手绘回旋箭头）
+  function doodleCurl(ctx, x, y, s, color) {
+    ctx.save();
+    ctx.strokeStyle = color; ctx.lineWidth = Math.max(2, s * 0.13); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    ctx.beginPath();
+    ctx.moveTo(x, y - s * 0.55);
+    ctx.bezierCurveTo(x - s * 0.8, y - s * 0.5, x - s * 0.75, y + s * 0.55, x + s * 0.05, y + s * 0.5);
+    ctx.bezierCurveTo(x + s * 0.62, y + s * 0.45, x + s * 0.55, y - s * 0.25, x + s * 0.02, y - s * 0.18);
+    ctx.stroke();
+    const ax = x + s * 0.02, ay = y - s * 0.18;
+    ctx.beginPath();
+    ctx.moveTo(ax - s * 0.26, ay - s * 0.05); ctx.lineTo(ax, ay); ctx.lineTo(ax + s * 0.02, ay - s * 0.3);
+    ctx.stroke();
+    ctx.restore();
+  }
+  // 波浪线（参考图右上那种手绘抖动短线）
+  function doodleSquiggle(ctx, x, y, w, color) {
+    ctx.save();
+    ctx.strokeStyle = color; ctx.lineWidth = Math.max(2, w * 0.055); ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    const n = 4, seg = w / n, a = w * 0.07;
+    ctx.beginPath(); ctx.moveTo(x, y);
+    for (let i = 0; i < n; i++) ctx.quadraticCurveTo(x + seg * (i + 0.5), y + (i % 2 ? a : -a), x + seg * (i + 1), y);
+    ctx.stroke();
+    ctx.restore();
+  }
+  // 粗下划线（马克笔一笔带过，两端圆头）
+  function doodleDash(ctx, x, y, w, color) {
+    ctx.save();
+    ctx.globalAlpha = 0.85; ctx.strokeStyle = color; ctx.lineWidth = Math.max(4, w * 0.14); ctx.lineCap = 'round';
+    ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + w, y - w * 0.03); ctx.stroke();
+    ctx.restore();
+  }
+  // 手绘装饰：三处点缀统一落在卡片顶部留白带（品牌行与引文之间，非主题包版式才有这块空档），
+  // 避开引文正文、出处与二维码，低存在感不抢可读性。
+  function paintDoodle(ctx, W, H, rng) {
+    const gold = '#f4b942', yellow = '#ffd23f';
+    doodleCurl(ctx, W - 150, 88, 24, gold);
+    doodleSquiggle(ctx, W - 98, 60, 46, gold);
+    doodleDash(ctx, 250, 94, 42, yellow);
+  }
+
+  globalThis.__acCardArt = { paintBackdrop, paintCardAccent, resolveTheme, resolveDayTheme, themeDateInYear, THEME_LIST, paintMarker, paintDoodle };
+  globalThis.__acCardArtInternals = { paintThemeIcon, makeRng };
   // ⚠️ THEME_LIST 以「同一数组引用」对外暴露：.workbuddy/flower_themes.js 在运行时 push 花主题。
   //    若改成 `card.THEME_LIST = [...]` 重新赋值，注入会静默脱钩（不报错，但花主题全不生效）。
 })();

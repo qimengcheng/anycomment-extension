@@ -62,6 +62,9 @@
     $('card_glass_alpha').value = typeof cfg.card_glass_alpha === 'number' ? cfg.card_glass_alpha : 55;
     $('card_glass_alpha_val').textContent = `${$('card_glass_alpha').value}%`;
     $('glass_blur_box').classList.toggle('off', cfg.card_glass_mode !== true);
+    $('card_marker').checked = cfg.card_marker !== false;
+    $('card_doodle').checked = cfg.card_doodle !== false;
+    $('doodle_box').classList.toggle('off', cfg.card_marker === false);
     $('card_pack_shot_bg').checked = cfg.card_pack_shot_bg === true;
     $('card_pack_shot_desat').value = typeof cfg.card_pack_shot_desat === 'number' ? cfg.card_pack_shot_desat : 0;
     for (const p of packs) {
@@ -88,6 +91,8 @@
   $('card_festival_bg').addEventListener('change', (e) => save({ card_festival_bg: e.target.checked }));
   $('card_memorial_bg').addEventListener('change', (e) => save({ card_memorial_bg: e.target.checked }));
   $('card_glass_mode').addEventListener('change', (e) => save({ card_glass_mode: e.target.checked }));
+  $('card_marker').addEventListener('change', (e) => save({ card_marker: e.target.checked }));
+  $('card_doodle').addEventListener('change', (e) => save({ card_doodle: e.target.checked }));
   $('card_glass_blur').addEventListener('input', (e) => saveSlider('card_glass_blur', Number(e.target.value), $('card_glass_blur_val'), (v) => `${v}px`));
   $('card_glass_alpha').addEventListener('input', (e) => saveSlider('card_glass_alpha', Number(e.target.value), $('card_glass_alpha_val'), (v) => `${v}%`));
   $('card_pack_shot_bg').addEventListener('change', (e) => save({ card_pack_shot_bg: e.target.checked }));
@@ -445,7 +450,7 @@
     // 划线分享金句卡片走真实 drawShareCard，与截图预览共用主题选择与开关（theme_id 同样只在本页临时生效）
     try {
       const opts2 = {
-        text: '选中网页里的一段文字，点「分享」，就能生成这样一张带二维码的金句卡片。',
+        text: '选中网页里的一段文字，点「分享」，就能生成像 Codex 这样带荧光笔划线的金句卡片。',
         title: '示例文章标题：划线分享的排版效果',
         site: 'anycomment.qimengcheng-47e.workers.dev',
         url: SAMPLE_URL,
@@ -456,6 +461,8 @@
         glassAlpha: typeof cfg.card_glass_alpha === 'number' ? cfg.card_glass_alpha : 55,
         themeId: previewTheme.startsWith('pack_') ? '' : previewTheme,
         defaultTheme: cfg.card_default_theme || '',
+        marker: cfg.card_marker !== false,
+        doodle: cfg.card_marker !== false && cfg.card_doodle !== false,
       };
       if (packInfo) opts2.packArt = packInfo;
       const url2 = card.drawShareCard(opts2);

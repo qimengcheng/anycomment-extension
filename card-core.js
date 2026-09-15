@@ -18,6 +18,8 @@
     card_glass_mode: false, // 划线分享卡片磨砂玻璃模式：白底半透明 + 背后画面模糊（backdrop-filter blur 5px 的画布等价）
     card_glass_blur: 5, // 磨砂玻璃的模糊半径（px，0~50）；0 = 只调透明度不模糊
     card_glass_alpha: 55, // 磨砂玻璃面板的白色不透明度（%，0~100）；0=全透明只剩模糊背景，100=实底白卡
+    card_marker: true, // 划线分享卡片：给关键词加小红书风荧光笔划线（默认自动识别英文/数字词，预览里可直接点卡片上的词增删）
+    card_doodle: true, // 划线分享卡片：手绘装饰元素（箭头/波浪线/粗下划线），随划线一起生效，可单独关闭
   };
 
   const fontMain = (size, weight = 600) => `${weight} ${size}px "PingFang SC", "Microsoft YaHei", system-ui, sans-serif`;
