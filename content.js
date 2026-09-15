@@ -415,9 +415,9 @@
           });
         }
         if (useMarker) {
-          // 调色板：点色块只切换当前选中色（重开浮层刷新选中态），不改动已划的词
+          // 调色板：点色块 = 把当前所有已高亮词重涂成选中色，并作为之后点词的新色
           for (const c of palette) {
-            acts.push({ label: c.name, bg: c.css, selected: c.id === activeColor, onClick: () => { activeColor = c.id; open(); } });
+            acts.push({ label: c.name, bg: c.css, selected: c.id === activeColor, onClick: () => { activeColor = c.id; for (const k in hl) hl[k] = c.id; open(); } });
           }
           acts.push({
             label: doodle ? '装饰：开' : '装饰：关',
