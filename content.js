@@ -376,7 +376,8 @@
   }
 
   // 划线分享：生成卡片 + 预览浮层（下载/复制），登录态下记录并即时标虚线。
-  // 开启「划线强调」时，卡片给关键词上小红书风荧光笔划线，预览里直接点卡片上的词即可增删高亮
+  // 开启「划线强调」时，卡片给关键词上小红书风荧光笔划线：预览里有调色板（黄橙粉绿蓝紫 + 彩虹渐变），
+  // 选中的颜色应用到之后点的词，再点已高亮的词取消；每个词各留自己的颜色
   function onQuoteShare() {
     if (!pendingQuote) return;
     const q = pendingQuote;
@@ -385,52 +386,58 @@
     pendingQuote = null;
     try {
       const useMarker = markerOn;
-      let hl = useMarker ? card.autoHighlight(q.text) : []; // 当前高亮词块 key（可被用户点选增删）
+      const palette = card.MARKER_PALETTE || [];
+      const autoMap = () => Object.fromEntries((useMarker ? card.autoHighlight(q.text) : []).map((k) => [k, 'yellow']));
+      let hl = autoMap(); // { "行:块": colorId }
       let doodle = useMarker && doodleOn; // 手绘装饰开关（预览里可临时切换）
+      let activeColor = 'yellow'; // 调色板当前选中色
+      let curPack; // 手动「换一张背景」后的包条目；未换则 undefined 走自动路径
       const render = () => card.drawShareCard({
         text: q.text, title: document.title, site: location.host, url: pageUrl(),
         festive: festiveBg, memorial: memorialBg, defaultTheme, glass: glassMode, glassBlur, glassAlpha,
-        marker: useMarker, doodle, highlight: hl,
+        packArt: curPack, marker: useMarker, doodle, highlight: hl,
       });
-      const dataUrl = render();
-      // 主题包随机换图：有可用包才出按钮，点一次随机抽一张重合成（避开当前这张）
-      const actions = [];
-      if (globalThis.__acThemePacks?.randomReady?.()) {
-        let lastPack = globalThis.__acThemePack ? `${globalThis.__acThemePack.packId}:${globalThis.__acThemePack.key}` : '';
-        actions.push({
-          label: '换一张背景',
-          onClick: async (updateImg) => {
-            const e = await globalThis.__acThemePacks.randomEntry(lastPack);
-            if (!e) throw new Error('no-pack-art');
-            lastPack = `${e.packId}:${e.key}`;
-            updateImg(card.drawShareCard({ text: q.text, title: document.title, site: location.host, url: pageUrl(), festive: festiveBg, memorial: memorialBg, defaultTheme, glass: glassMode, glassBlur, glassAlpha, packArt: e, marker: useMarker, doodle, highlight: hl }));
-            return '换一张背景';
-          },
-        });
-      }
-      if (useMarker) {
-        actions.push({
-          label: doodle ? '装饰：开' : '装饰：关',
-          onClick: (updateImg) => { doodle = !doodle; updateImg(render()); return doodle ? '装饰：开' : '装饰：关'; },
-        });
-        actions.push({
-          label: '重置划线',
-          onClick: (updateImg) => { hl = card.autoHighlight(q.text); updateImg(render()); return '重置划线'; },
-        });
-      }
-      card.showPreview(shadow, dataUrl, {
-        alt: '划线分享卡片预览',
-        actions,
-        // 走点词交互时关掉手绘标注层（避免抢点击）；未开划线强调则保留原有标注能力
-        annotate: !useMarker,
-        onImageClick: useMarker ? (fx, fy, { updateImg }) => {
-          const key = hitQuoteToken(fx, fy);
-          if (!key) return;
-          const i = hl.indexOf(key);
-          if (i >= 0) hl.splice(i, 1); else hl.push(key);
-          updateImg(render());
-        } : undefined,
-      });
+      const buildActions = () => {
+        const acts = [];
+        // 主题包随机换图：有可用包才出按钮，点一次随机抽一张重合成（避开当前这张）
+        if (globalThis.__acThemePacks?.randomReady?.()) {
+          let lastPack = globalThis.__acThemePack ? `${globalThis.__acThemePack.packId}:${globalThis.__acThemePack.key}` : '';
+          acts.push({
+            label: '换一张背景',
+            onClick: async (updateImg) => {
+              const e = await globalThis.__acThemePacks.randomEntry(lastPack);
+              if (!e) throw new Error('no-pack-art');
+              lastPack = `${e.packId}:${e.key}`;
+              curPack = e;
+              updateImg(render());
+              return '换一张背景';
+            },
+          });
+        }
+        if (useMarker) {
+          // 调色板：点色块只切换当前选中色（重开浮层刷新选中态），不改动已划的词
+          for (const c of palette) {
+            acts.push({ label: c.name, bg: c.css, selected: c.id === activeColor, onClick: () => { activeColor = c.id; open(); } });
+          }
+          acts.push({
+            label: doodle ? '装饰：开' : '装饰：关',
+            onClick: (updateImg) => { doodle = !doodle; updateImg(render()); return doodle ? '装饰：开' : '装饰：关'; },
+          });
+          acts.push({
+            label: '重置划线',
+            onClick: (updateImg) => { hl = autoMap(); updateImg(render()); return '重置划线'; },
+          });
+        }
+        return acts;
+      };
+      const onImageClick = useMarker ? (fx, fy, { updateImg }) => {
+        const key = hitQuoteToken(fx, fy);
+        if (!key) return;
+        if (hl[key]) delete hl[key]; else hl[key] = activeColor; // 已高亮→取消，未高亮→用当前色划上
+        updateImg(render());
+      } : undefined;
+      const open = () => card.showPreview(shadow, render(), { alt: '划线分享卡片预览', actions: buildActions(), annotate: !useMarker, onImageClick });
+      open();
       recordQuoteShare(q); // 记录划线（登录态），并即时给页面加虚线
     } catch (e) {
       showExtToast('生成分享卡片失败');

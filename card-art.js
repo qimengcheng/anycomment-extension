@@ -2748,21 +2748,42 @@
 
   // ===== 小红书风「划线强调」原语（v1.83.0）：荧光笔划线 + 手绘装饰 =====
   // 全部用调用方传入的固定种子 rng，同一段文字同一尺寸重绘逐像素一致（预览不闪烁）。
+  // 荧光笔调色板（v1.89.0）：单选色 + 彩虹渐变。css 供设置页/预览按钮画色块；
+  // 实色用浅色调（multiply 压白底得到柔和荧光色），rainbow 用横向线性渐变。
+  const MARKER_COLORS = {
+    yellow: '#ffe873', orange: '#ffc79b', pink: '#ffb3d1',
+    green: '#b6f0a6', blue: '#a6d8ff', purple: '#d7b3ff',
+  };
+  const MARKER_RAINBOW = ['#ffe873', '#ffc79b', '#ffb3d1', '#b6f0a6', '#a6d8ff', '#d7b3ff'];
+  const MARKER_PALETTE = [
+    { id: 'yellow', name: '黄', css: MARKER_COLORS.yellow },
+    { id: 'orange', name: '橙', css: MARKER_COLORS.orange },
+    { id: 'pink', name: '粉', css: MARKER_COLORS.pink },
+    { id: 'green', name: '绿', css: MARKER_COLORS.green },
+    { id: 'blue', name: '蓝', css: MARKER_COLORS.blue },
+    { id: 'purple', name: '紫', css: MARKER_COLORS.purple },
+    { id: 'rainbow', name: '彩虹', css: `linear-gradient(90deg, ${MARKER_RAINBOW.join(', ')})` },
+  ];
   // 荧光笔：文字下方一道**粗、方头、斜切**的马克笔带，**正片叠底(multiply)**叠上——
-  // 白底变黄、深色字透出，和真荧光笔压在纸上的混色一致。由调用方在文字之后绘制（"划在字上"）。
+  // 白底变彩色、深色字透出，和真荧光笔压在纸上的混色一致。由调用方在文字之后绘制（"划在字上"）。
   // 顶边相对底边水平右移 skew 形成平行四边形（斜马克笔），两端是直的斜切边（方头，非圆头）。
-  // x/y 为词块左上角，fs 为字号。
-  function paintMarker(ctx, x, y, w, fs, rng) {
+  // x/y 为词块左上角，fs 为字号，colorId 为调色板 id（缺省/未知回落黄色；'rainbow'=横向彩虹渐变）。
+  function paintMarker(ctx, x, y, w, fs, rng, colorId) {
     if (!(w > 0)) return;
     const thick = Math.max(13, fs * 0.52); // 加粗：约半个字高
     const top = y + fs * 0.48; // 从字高中部往下压
     const bot = top + thick; // 探到基线以下
     const skew = Math.max(6, thick * 0.5); // 斜切量 → 平行四边形
     const j = () => (rng() - 0.5) * Math.min(1.5, thick * 0.08); // 极轻微手绘抖动
+    let fill = MARKER_COLORS[colorId];
+    if (colorId === 'rainbow') {
+      fill = ctx.createLinearGradient(x, 0, x + w, 0);
+      MARKER_RAINBOW.forEach((c, i) => fill.addColorStop(i / (MARKER_RAINBOW.length - 1), c));
+    } else if (!fill) fill = MARKER_COLORS.yellow;
     ctx.save();
     ctx.globalCompositeOperation = 'multiply';
     ctx.globalAlpha = 0.8; // 略降不透明度，笔带更通透不发闷
-    ctx.fillStyle = '#ffe873'; // 浅柠檬黄（此前 #ffd21a 偏深）
+    ctx.fillStyle = fill;
     ctx.beginPath();
     ctx.moveTo(x + skew + j(), top + j());
     ctx.lineTo(x + w + skew + j(), top + j());
@@ -2813,7 +2834,7 @@
     doodleDash(ctx, 250, 94, 42, yellow);
   }
 
-  globalThis.__acCardArt = { paintBackdrop, paintCardAccent, resolveTheme, resolveDayTheme, themeDateInYear, THEME_LIST, paintMarker, paintDoodle };
+  globalThis.__acCardArt = { paintBackdrop, paintCardAccent, resolveTheme, resolveDayTheme, themeDateInYear, THEME_LIST, paintMarker, paintDoodle, MARKER_PALETTE };
   globalThis.__acCardArtInternals = { paintThemeIcon, makeRng };
   // ⚠️ THEME_LIST 以「同一数组引用」对外暴露：.workbuddy/flower_themes.js 在运行时 push 花主题。
   //    若改成 `card.THEME_LIST = [...]` 重新赋值，注入会静默脱钩（不报错，但花主题全不生效）。

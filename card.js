@@ -7,7 +7,7 @@
   const A = globalThis.__acCardArt, AI = globalThis.__acCardArtInternals;
   const { fontMain, wrapText, roundRectPath, buildQrMatrix, drawQrModules, paintWhiteCard, SHOT_DEFAULTS, fmtShotTime, cleanUrlForQr } = C;
   const { paintGlassCard, glassTextHalo, frostText } = CI;
-  const { paintBackdrop, paintCardAccent, resolveTheme, resolveDayTheme, themeDateInYear, THEME_LIST, paintMarker, paintDoodle } = A;
+  const { paintBackdrop, paintCardAccent, resolveTheme, resolveDayTheme, themeDateInYear, THEME_LIST, paintMarker, paintDoodle, MARKER_PALETTE } = A;
   const { paintThemeIcon, makeRng } = AI;
 
   // 主题包图片整体平均色（按 1x1 缩绘取样），用于海报外留白的底色延伸
@@ -244,11 +244,15 @@
     ctx.textBaseline = 'top';
     if (marker) {
       const { tokens } = buildQuoteLayout(text);
-      const hlSet = new Set(Array.isArray(highlight) ? highlight : autoHighlightKeys(text));
-      // 词间"胶水"（空白 / 纯标点，如小数点、顿号、连字符）把相邻命中词连成一条：
+      // highlight 三种入参：{ "行:块": colorId } 映射（分色）/ ["行:块", ...] 数组（统一黄）/ undefined（自动识别，统一黄）
+      let hlMap;
+      if (Array.isArray(highlight)) hlMap = Object.fromEntries(highlight.map((k) => [k, 'yellow']));
+      else if (highlight && typeof highlight === 'object') hlMap = highlight;
+      else hlMap = Object.fromEntries(autoHighlightKeys(text).map((k) => [k, 'yellow']));
+      // 词间"胶水"（空白 / 纯标点，如小数点、顿号、连字符）把相邻同色命中词连成一条：
       // 否则 "16.68" 会被 "." 切成两段各画一头，露出断口和端点接缝，很难看
       const isGlue = (t) => /^\s+$/.test(t) || /^[^\p{L}\p{N}]+$/u.test(t);
-      // 先画文字，再把荧光笔带压在文字之上（真马克笔"划在字上"的效果；multiply 混色下深色字仍透出）
+      // 先画文字，再把荧光笔带压在文字之上（真马克笔"划在字上"；multiply 混色下深色字仍透出）
       tokens.forEach((line, i) => {
         const yTop = quoteTop + i * lineH - 20;
         line.forEach((tok) => put(tok.t, PAD + tok.x, yTop));
@@ -256,22 +260,23 @@
       tokens.forEach((line, i) => {
         const yTop = quoteTop + i * lineH - 20;
         const idxs = [];
-        line.forEach((tok, ti) => { if (hlSet.has(`${i}:${ti}`)) idxs.push(ti); });
+        line.forEach((tok, ti) => { if (hlMap[`${i}:${ti}`]) idxs.push(ti); });
         if (!idxs.length) return;
-        const drawRun = (a, b) => {
+        const drawRun = (a, b, colorId) => {
           const x0 = line[a].x, x1 = line[b].x + line[b].w;
           const seed = (i * 100003 + Math.round(x0) * 31 + Math.round(x1)) >>> 0;
-          paintMarker(ctx, PAD + x0, yTop, x1 - x0, 30, makeRng(seed));
+          paintMarker(ctx, PAD + x0, yTop, x1 - x0, 30, makeRng(seed), colorId);
         };
-        let a = idxs[0], b = idxs[0];
+        let a = idxs[0], b = idxs[0], runColor = hlMap[`${i}:${a}`];
         for (let n = 1; n < idxs.length; n++) {
           const prev = idxs[n - 1], cur = idxs[n];
+          const curColor = hlMap[`${i}:${cur}`];
           let gapGlue = true;
           for (let k = prev + 1; k < cur; k++) if (!isGlue(line[k].t)) { gapGlue = false; break; }
-          if (gapGlue) b = cur;
-          else { drawRun(a, b); a = cur; b = cur; }
+          if (gapGlue && curColor === runColor) b = cur;
+          else { drawRun(a, b, runColor); a = cur; b = cur; runColor = curColor; }
         }
-        drawRun(a, b);
+        drawRun(a, b, runColor);
       });
       LAST_QUOTE = { W, H, PAD, quoteTop, lineH, fs: 30, tokens };
     } else {
@@ -586,7 +591,7 @@
       max-width: 92vw;
     }
     .ac-share-img { max-height: 62vh; max-width: 100%; border-radius: 8px; border: 1px solid #eceef4; }
-    .ac-share-actions { display: flex; gap: 10px; }
+    .ac-share-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
     .ac-share-btn {
       padding: 8px 18px; border-radius: 8px; border: none; cursor: pointer;
       font: 600 13px/1 system-ui, sans-serif;
@@ -720,11 +725,14 @@
       window.removeEventListener('keydown', onKey, true);
     }
     btnClose.addEventListener('click', close);
-    // 扩展操作按钮（如截图的主题包背景快捷开关）：onClick(updateImg) 返回字符串则更新按钮文案
+    // 扩展操作按钮（如截图的主题包背景快捷开关、划线卡片的调色板）：
+    // onClick(updateImg) 返回字符串则更新按钮文案；act.bg 给按钮上色（调色板色块）；act.selected 描选中态
     for (const act of opts.actions || []) {
       const b = document.createElement('button');
       b.className = 'ac-share-btn ac-share-ghost';
       b.textContent = act.label;
+      if (act.bg) { b.style.background = act.bg; b.style.color = '#3a3f4a'; }
+      if (act.selected) { b.style.outline = '2px solid #4f6ef7'; b.style.outlineOffset = '1px'; }
       b.addEventListener('click', async () => {
         try {
           const nl = await act.onClick(updateImg);
@@ -745,6 +753,6 @@
     drawQrModules, paintBackdrop, paintWhiteCard, paintCardAccent, resolveTheme,
     resolveDayTheme, themeDateInYear, THEME_LIST, fmtShotTime, drawShareCard,
     composeScreenshot, planShot, showPreview, PREVIEW_CSS,
-    autoHighlight: autoHighlightKeys, lastQuoteLayout: () => LAST_QUOTE,
+    autoHighlight: autoHighlightKeys, lastQuoteLayout: () => LAST_QUOTE, MARKER_PALETTE,
   };
 })();
