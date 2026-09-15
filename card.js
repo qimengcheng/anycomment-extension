@@ -248,7 +248,11 @@
       // 词间"胶水"（空白 / 纯标点，如小数点、顿号、连字符）把相邻命中词连成一条：
       // 否则 "16.68" 会被 "." 切成两段各画一头，露出断口和端点接缝，很难看
       const isGlue = (t) => /^\s+$/.test(t) || /^[^\p{L}\p{N}]+$/u.test(t);
-      // 先画高亮笔带（同一行内被胶水隔开的命中词块合并成一条），文字随后压上保持清晰
+      // 先画文字，再把荧光笔带压在文字之上（真马克笔"划在字上"的效果；multiply 混色下深色字仍透出）
+      tokens.forEach((line, i) => {
+        const yTop = quoteTop + i * lineH - 20;
+        line.forEach((tok) => put(tok.t, PAD + tok.x, yTop));
+      });
       tokens.forEach((line, i) => {
         const yTop = quoteTop + i * lineH - 20;
         const idxs = [];
@@ -268,10 +272,6 @@
           else { drawRun(a, b); a = cur; b = cur; }
         }
         drawRun(a, b);
-      });
-      tokens.forEach((line, i) => {
-        const yTop = quoteTop + i * lineH - 20;
-        line.forEach((tok) => put(tok.t, PAD + tok.x, yTop));
       });
       LAST_QUOTE = { W, H, PAD, quoteTop, lineH, fs: 30, tokens };
     } else {
