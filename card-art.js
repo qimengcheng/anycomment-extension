@@ -2748,30 +2748,27 @@
 
   // ===== 小红书风「划线强调」原语（v1.83.0）：荧光笔划线 + 手绘装饰 =====
   // 全部用调用方传入的固定种子 rng，同一段文字同一尺寸重绘逐像素一致（预览不闪烁）。
-  // 荧光笔：文字下方偏底的一道手绘黄色笔带，画在文字之前（字压在笔带上保持清晰）。
-  // 用「单次描边 + 圆头 + 平滑大弧」实现，避免多段 fill / 端点圆叠加造成的深浅接缝；
-  // 采样点少（step 大）→ 起伏是平缓大弧而非锯齿棱角。x/y 为词块左上角，fs 为字号。
+  // 荧光笔：文字下方一道**粗、方头、斜切**的马克笔带，**正片叠底(multiply)**叠上——
+  // 白底变黄、深色字透出，和真荧光笔压在纸上的混色一致。画在文字之前，字再压上保持清晰。
+  // 顶边相对底边水平右移 skew 形成平行四边形（斜马克笔），两端是直的斜切边（方头，非圆头）。
+  // x/y 为词块左上角，fs 为字号。
   function paintMarker(ctx, x, y, w, fs, rng) {
     if (!(w > 0)) return;
-    const cy = y + fs * 0.82; // 笔画中线，贴近基线、落在字底
-    const thick = Math.max(6, fs * 0.3); // 笔带厚度
-    const amp = Math.min(2, thick * 0.16); // 极轻微手绘起伏
-    const step = Math.max(16, w / 4); // 采样少 → 平滑
+    const thick = Math.max(13, fs * 0.52); // 加粗：约半个字高
+    const top = y + fs * 0.48; // 从字高中部往下压
+    const bot = top + thick; // 探到基线以下
+    const skew = Math.max(6, thick * 0.5); // 斜切量 → 平行四边形
+    const j = () => (rng() - 0.5) * Math.min(1.5, thick * 0.08); // 极轻微手绘抖动
     ctx.save();
-    ctx.globalAlpha = 0.85;
-    ctx.strokeStyle = '#ffd23f';
-    ctx.lineWidth = thick;
-    ctx.lineCap = 'round';
-    ctx.lineJoin = 'round';
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.fillStyle = '#ffd21a';
     ctx.beginPath();
-    ctx.moveTo(x, cy + (rng() - 0.5) * amp);
-    let lastX = x;
-    for (let sx = x + step; sx < x + w; sx += step) {
-      ctx.quadraticCurveTo((lastX + sx) / 2, cy + (rng() - 0.5) * amp, sx, cy + (rng() - 0.5) * amp);
-      lastX = sx;
-    }
-    ctx.quadraticCurveTo((lastX + x + w) / 2, cy + (rng() - 0.5) * amp, x + w, cy + (rng() - 0.5) * amp);
-    ctx.stroke();
+    ctx.moveTo(x + skew + j(), top + j());
+    ctx.lineTo(x + w + skew + j(), top + j());
+    ctx.lineTo(x + w + j(), bot + j());
+    ctx.lineTo(x + j(), bot + j());
+    ctx.closePath();
+    ctx.fill();
     ctx.restore();
   }
   // 卷曲箭头 ↷（参考图左上那种手绘回旋箭头）

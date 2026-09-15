@@ -207,8 +207,11 @@
       else paintWhiteCard(ctx, cx, cy, cw, ch, r, 24, 8);
       paintCardAccent(ctx, theme, cx, cy, cw, ch, r, 1);
       paintThemeIcon(ctx, theme, W, H, 1);
-      if (doodle) paintDoodle(ctx, W, H, makeRng(((text ? text.length : 0) + 7) >>> 0));
     }
+
+    // 手绘装饰：主题包版式与普通版式都画（此前只在 else 分支，导致主题包下"装饰"开关毫无变化）。
+    // 落在卡片顶部留白带、文字之前，品牌行与引文压在其上
+    if (doodle) paintDoodle(ctx, W, H, makeRng(((text ? text.length : 0) + 7) >>> 0));
 
     // 磨砂玻璃模式下所有文字统一走 put（羽化白描边 + 原色填充），强度由面板不透明度自动反推；
     // 装饰性大引号是淡色水印，不需要可读性，保持原样不描边
