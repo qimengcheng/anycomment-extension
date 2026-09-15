@@ -2748,32 +2748,30 @@
 
   // ===== 小红书风「划线强调」原语（v1.83.0）：荧光笔划线 + 手绘装饰 =====
   // 全部用调用方传入的固定种子 rng，同一段文字同一尺寸重绘逐像素一致（预览不闪烁）。
-  // 荧光笔：文字下方偏底的一道手绘黄色笔带，画在文字之前（字压在笔带上保持清晰），
-  // 上下沿带轻微抖动、两端圆头，模拟马克笔按压。x/y 为词块左上角，fs 为字号。
+  // 荧光笔：文字下方偏底的一道手绘黄色笔带，画在文字之前（字压在笔带上保持清晰）。
+  // 用「单次描边 + 圆头 + 平滑大弧」实现，避免多段 fill / 端点圆叠加造成的深浅接缝；
+  // 采样点少（step 大）→ 起伏是平缓大弧而非锯齿棱角。x/y 为词块左上角，fs 为字号。
   function paintMarker(ctx, x, y, w, fs, rng) {
     if (!(w > 0)) return;
-    const top = y + fs * 0.58, bot = y + fs * 0.98;
-    const h = bot - top;
-    const amp = Math.max(0.8, h * 0.16);
-    const seg = Math.max(6, Math.min(20, w / 5));
-    const j = () => (rng() - 0.5) * amp;
+    const cy = y + fs * 0.82; // 笔画中线，贴近基线、落在字底
+    const thick = Math.max(6, fs * 0.3); // 笔带厚度
+    const amp = Math.min(2, thick * 0.16); // 极轻微手绘起伏
+    const step = Math.max(16, w / 4); // 采样少 → 平滑
     ctx.save();
-    ctx.globalAlpha = 0.82;
-    ctx.fillStyle = '#ffd23f';
-    ctx.lineJoin = 'round';
+    ctx.globalAlpha = 0.85;
+    ctx.strokeStyle = '#ffd23f';
+    ctx.lineWidth = thick;
     ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
     ctx.beginPath();
-    ctx.moveTo(x, top + j());
-    for (let px = x + seg; px < x + w; px += seg) ctx.lineTo(px, top + j());
-    ctx.lineTo(x + w, top + j());
-    ctx.lineTo(x + w, bot + j());
-    for (let px = x + w - seg; px > x; px -= seg) ctx.lineTo(px, bot + j());
-    ctx.lineTo(x, bot + j());
-    ctx.closePath();
-    ctx.fill();
-    const my = (top + bot) / 2, mr = h * 0.44;
-    ctx.beginPath(); ctx.arc(x, my, mr, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(x + w, my, mr, 0, Math.PI * 2); ctx.fill();
+    ctx.moveTo(x, cy + (rng() - 0.5) * amp);
+    let lastX = x;
+    for (let sx = x + step; sx < x + w; sx += step) {
+      ctx.quadraticCurveTo((lastX + sx) / 2, cy + (rng() - 0.5) * amp, sx, cy + (rng() - 0.5) * amp);
+      lastX = sx;
+    }
+    ctx.quadraticCurveTo((lastX + x + w) / 2, cy + (rng() - 0.5) * amp, x + w, cy + (rng() - 0.5) * amp);
+    ctx.stroke();
     ctx.restore();
   }
   // 卷曲箭头 ↷（参考图左上那种手绘回旋箭头）

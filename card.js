@@ -242,24 +242,29 @@
     if (marker) {
       const { tokens } = buildQuoteLayout(text);
       const hlSet = new Set(Array.isArray(highlight) ? highlight : autoHighlightKeys(text));
-      // 先画高亮笔带（同行连续命中词块合并成一条），文字随后压上保持清晰
+      // 词间"胶水"（空白 / 纯标点，如小数点、顿号、连字符）把相邻命中词连成一条：
+      // 否则 "16.68" 会被 "." 切成两段各画一头，露出断口和端点接缝，很难看
+      const isGlue = (t) => /^\s+$/.test(t) || /^[^\p{L}\p{N}]+$/u.test(t);
+      // 先画高亮笔带（同一行内被胶水隔开的命中词块合并成一条），文字随后压上保持清晰
       tokens.forEach((line, i) => {
         const yTop = quoteTop + i * lineH - 20;
-        let run = null;
-        const flush = () => {
-          if (run) {
-            const seed = (i * 100003 + Math.round(run.x0) * 31 + Math.round(run.x1)) >>> 0;
-            paintMarker(ctx, PAD + run.x0, yTop, run.x1 - run.x0, 30, makeRng(seed));
-          }
-          run = null;
+        const idxs = [];
+        line.forEach((tok, ti) => { if (hlSet.has(`${i}:${ti}`)) idxs.push(ti); });
+        if (!idxs.length) return;
+        const drawRun = (a, b) => {
+          const x0 = line[a].x, x1 = line[b].x + line[b].w;
+          const seed = (i * 100003 + Math.round(x0) * 31 + Math.round(x1)) >>> 0;
+          paintMarker(ctx, PAD + x0, yTop, x1 - x0, 30, makeRng(seed));
         };
-        line.forEach((tok, ti) => {
-          if (hlSet.has(`${i}:${ti}`)) {
-            if (!run) run = { x0: tok.x, x1: tok.x + tok.w };
-            else run.x1 = tok.x + tok.w;
-          } else flush();
-        });
-        flush();
+        let a = idxs[0], b = idxs[0];
+        for (let n = 1; n < idxs.length; n++) {
+          const prev = idxs[n - 1], cur = idxs[n];
+          let gapGlue = true;
+          for (let k = prev + 1; k < cur; k++) if (!isGlue(line[k].t)) { gapGlue = false; break; }
+          if (gapGlue) b = cur;
+          else { drawRun(a, b); a = cur; b = cur; }
+        }
+        drawRun(a, b);
       });
       tokens.forEach((line, i) => {
         const yTop = quoteTop + i * lineH - 20;
