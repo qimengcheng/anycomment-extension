@@ -2751,10 +2751,10 @@
   // 荧光笔调色板（v1.89.0）：单选色 + 彩虹渐变。css 供设置页/预览按钮画色块；
   // 实色用浅色调（multiply 压白底得到柔和荧光色），rainbow 用横向线性渐变。
   const MARKER_COLORS = {
-    yellow: '#ffe873', orange: '#ffc79b', pink: '#ffb3d1',
+    yellow: '#fff2a8', orange: '#ffc79b', pink: '#ffb3d1',
     green: '#b6f0a6', blue: '#a6d8ff', purple: '#d7b3ff',
   };
-  const MARKER_RAINBOW = ['#ffe873', '#ffc79b', '#ffb3d1', '#b6f0a6', '#a6d8ff', '#d7b3ff'];
+  const MARKER_RAINBOW = ['#fff2a8', '#ffc79b', '#ffb3d1', '#b6f0a6', '#a6d8ff', '#d7b3ff'];
   const MARKER_PALETTE = [
     { id: 'yellow', name: '黄', css: MARKER_COLORS.yellow },
     { id: 'orange', name: '橙', css: MARKER_COLORS.orange },
