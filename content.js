@@ -376,8 +376,9 @@
   }
 
   // 划线分享：生成卡片 + 预览浮层（下载/复制），登录态下记录并即时标虚线。
-  // 开启「划线强调」时，卡片给关键词上小红书风荧光笔划线：预览里有调色板（黄橙粉绿蓝紫 + 彩虹渐变），
-  // 选中的颜色应用到之后点的词，再点已高亮的词取消；每个词各留自己的颜色
+  // 开启「划线强调」时，卡片给关键词上小红书风荧光笔划线：调色板（黄橙粉绿蓝紫 + 彩虹渐变）
+  // 以悬浮工具条形式贴在卡片下缘（不占浮层高度），选中的颜色应用到之后点的词，
+  // 再点已高亮的词取消；每个词各留自己的颜色
   function onQuoteShare() {
     if (!pendingQuote) return;
     const q = pendingQuote;
@@ -397,6 +398,7 @@
         festive: festiveBg, memorial: memorialBg, defaultTheme, glass: glassMode, glassBlur, glassAlpha,
         packArt: curPack, marker: useMarker, doodle, highlight: hl,
       });
+      // 底部按钮行只管「输出」类操作，调色板等编辑操作全部走图片上的悬浮工具条（见 buildFloatActions）
       const buildActions = () => {
         const acts = [];
         // 主题包随机换图：有可用包才出按钮，点一次随机抽一张重合成（避开当前这张）
@@ -414,20 +416,30 @@
             },
           });
         }
-        if (useMarker) {
-          // 调色板：点色块 = 把当前所有已高亮词重涂成选中色，并作为之后点词的新色
-          for (const c of palette) {
-            acts.push({ label: c.name, bg: c.css, selected: c.id === activeColor, onClick: () => { activeColor = c.id; for (const k in hl) hl[k] = c.id; open(); } });
-          }
-          acts.push({
-            label: doodle ? '装饰：开' : '装饰：关',
-            onClick: (updateImg) => { doodle = !doodle; updateImg(render()); return doodle ? '装饰：开' : '装饰：关'; },
-          });
-          acts.push({
-            label: '重置划线',
-            onClick: (updateImg) => { hl = autoMap(); updateImg(render()); return '重置划线'; },
-          });
-        }
+        return acts;
+      };
+      // 悬浮工具条：7 个色点 + 分隔线 + 装饰 / 重置（图标按钮）。浮在卡片下缘、不占额外高度。
+      // selected 传函数：点击后就地刷新选中态，不重建浮层（换色不再闪一下）
+      const ICON_DOODLE = '<svg viewBox="0 0 16 16" width="15" height="15" fill="currentColor"><path d="M8 1.7l1.7 4.6L14.3 8l-4.6 1.7L8 14.3 6.3 9.7 1.7 8l4.6-1.7z"/></svg>';
+      const ICON_RESET = '<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.4 6.7A5 5 0 1 1 8 13"/><path d="M3.4 2.7v4h4"/></svg>';
+      const buildFloatActions = () => {
+        if (!useMarker) return [];
+        // 点色块 = 把当前所有已高亮词重涂成选中色，并作为之后点词的新色
+        const acts = palette.map((c) => ({
+          kind: 'dot', label: c.name, bg: c.css,
+          selected: () => c.id === activeColor,
+          onClick: (updateImg) => { activeColor = c.id; for (const k in hl) hl[k] = c.id; updateImg(render()); },
+        }));
+        acts.push({ kind: 'sep' });
+        acts.push({
+          kind: 'icon', icon: ICON_DOODLE, label: '手绘装饰（点击开关）',
+          selected: () => doodle,
+          onClick: (updateImg) => { doodle = !doodle; updateImg(render()); },
+        });
+        acts.push({
+          kind: 'icon', icon: ICON_RESET, label: '重置划线',
+          onClick: (updateImg) => { hl = autoMap(); updateImg(render()); },
+        });
         return acts;
       };
       const onImageClick = useMarker ? (fx, fy, { updateImg }) => {
@@ -436,7 +448,10 @@
         if (hl[key]) delete hl[key]; else hl[key] = activeColor; // 已高亮→取消，未高亮→用当前色划上
         updateImg(render());
       } : undefined;
-      const open = () => card.showPreview(shadow, render(), { alt: '划线分享卡片预览', actions: buildActions(), annotate: !useMarker, onImageClick });
+      const open = () => card.showPreview(shadow, render(), {
+        alt: '划线分享卡片预览', actions: buildActions(), floatActions: buildFloatActions(),
+        annotate: !useMarker, onImageClick,
+      });
       open();
       recordQuoteShare(q); // 记录划线（登录态），并即时给页面加虚线
     } catch (e) {

@@ -2764,33 +2764,86 @@
     { id: 'purple', name: '紫', css: MARKER_COLORS.purple },
     { id: 'rainbow', name: '彩虹', css: `linear-gradient(90deg, ${MARKER_RAINBOW.join(', ')})` },
   ];
-  // 荧光笔：文字下方一道**粗、方头、斜切**的马克笔带，**正片叠底(multiply)**叠上——
-  // 白底变彩色、深色字透出，和真荧光笔压在纸上的混色一致。由调用方在文字之后绘制（"划在字上"）。
-  // 顶边相对底边水平右移 skew 形成平行四边形（斜马克笔），两端是直的斜切边（方头，非圆头）。
+  // 荧光笔「干笔刷」：外轮廓是干净的方头斜切条（长边取直，不再抖成波浪狗牙），
+  // 笔刷感来自**内部顺向缺色横纹**——沿厚度把笔带切成若干条水平刷痕、条间留细缝，
+  // 像马克笔/画笔画过去墨没吃满的丝状留白；逐条单独 fill、互不重叠（同 alpha 下重叠会叠深）。
+  // 起笔端向左出头（lead），两端斜切量 headLean/tailLean 轻微不等（多为顺斜、可略反向）。
+  // **正片叠底(multiply)**：白底变彩色、深色字透出；由调用方在文字之后绘制（"划在字上"）。
   // x/y 为词块左上角，fs 为字号，colorId 为调色板 id（缺省/未知回落黄色；'rainbow'=横向彩虹渐变）。
   function paintMarker(ctx, x, y, w, fs, rng, colorId) {
     if (!(w > 0)) return;
     const thick = Math.max(13, fs * 0.52); // 加粗：约半个字高
     const top = y + fs * 0.48; // 从字高中部往下压
     const bot = top + thick; // 探到基线以下
-    const skew = Math.max(6, thick * 0.5); // 斜切量 → 平行四边形
-    const j = () => (rng() - 0.5) * Math.min(1.5, thick * 0.08); // 极轻微手绘抖动
+    const skew = Math.max(6, thick * 0.5); // 斜切量 → 斜马克笔骨架
     let fill = MARKER_COLORS[colorId];
     if (colorId === 'rainbow') {
       fill = ctx.createLinearGradient(x, 0, x + w, 0);
       MARKER_RAINBOW.forEach((c, i) => fill.addColorStop(i / (MARKER_RAINBOW.length - 1), c));
     } else if (!fill) fill = MARKER_COLORS.yellow;
+    const lead = Math.max(4, thick * 0.35); // 起笔端向左出头
+    // 顶边相对底边在左/右端各自的水平错位（多为顺斜，允许略反向）→ 梯形斜切骨架，长边取直。
+    const lean = () => skew * (rng() * 1.4 - 0.2); // ≈ [-0.2·skew, 1.2·skew]
+    const headLean = lean();
+    const tailLean = lean();
+    // 以底边为 f=0、顶边为 f=1 的竖直参数，左右缘 x 随 f 线性插值（直边，不抖）。
+    const leftX = (f) => x - lead + headLean * f;
+    const rightX = (f) => x + w + tailLean * f;
+    const yAt = (f) => bot - f * thick;
+    const fillQuad = (xa, xb, fa, fb) => { // 由两条竖直边(x 恒定)围一个直边梯形并单独 fill
+      ctx.beginPath();
+      ctx.moveTo(xa, yAt(fa));
+      ctx.lineTo(xb, yAt(fa));
+      ctx.lineTo(xb, yAt(fb));
+      ctx.lineTo(xa, yAt(fb));
+      ctx.closePath();
+      ctx.fill();
+    };
+    const bristle = Math.min(w * 0.16, thick * 1.0); // 两端各约这么长的刷毛咬入区（再收短→实心更长）
+    const fHead = leftX(0) + bristle; // 实心段左界（起笔侧刷毛到此为止）
+    const fTail = rightX(1) - bristle; // 实心段右界（收笔侧刷毛从此起）
     ctx.save();
     ctx.globalCompositeOperation = 'multiply';
     ctx.globalAlpha = 0.8; // 略降不透明度，笔带更通透不发闷
     ctx.fillStyle = fill;
-    ctx.beginPath();
-    ctx.moveTo(x + skew + j(), top + j());
-    ctx.lineTo(x + w + skew + j(), top + j());
-    ctx.lineTo(x + w + j(), bot + j());
-    ctx.lineTo(x + j(), bot + j());
-    ctx.closePath();
-    ctx.fill();
+    // 1) 中间实心：不留缝、不断色，把笔带主体填满。
+    fillQuad(fHead, fTail, 0, 1);
+    // 2) 两端刷毛：每根毛画成**中线随 x 轻微起伏、粗细随机偏细、端头参差**的细线（真实干笔触），
+    //    只在两端出现、随机长短咬进实心段；线间留白=缺色。逐根单独 fill、上下沿各自取点不重叠叠深。
+    const nRows = Math.max(4, Math.min(12, Math.round(thick / 1.9))); // 毛根数（随粗细增减）
+    const rowF = 1 / nRows;
+    const amp = thick * 0.05; // 刷毛中线波浪幅度（小，避免相邻毛交叉叠深）
+    const freq = 0.07; // 弯曲频率（沿 x）
+    // 一根水平细毛：xa→xb，中线 yc，半厚 halfTh，phase 定波形；上下沿各自抖动→粗细沿线微变。
+    const bristleLine = (xa, xb, yc, halfTh, phase) => {
+      const span = xb - xa;
+      if (span <= 0) return;
+      const steps = Math.max(3, Math.round(span / (thick * 0.6)));
+      ctx.beginPath();
+      for (let s = 0; s <= steps; s++) { // 上沿：左→右
+        const xx = xa + (span * s) / steps;
+        const off = Math.sin(xx * freq + phase) * amp + (rng() - 0.5) * amp * 0.5;
+        ctx.lineTo(xx, yc + off - halfTh);
+      }
+      for (let s = steps; s >= 0; s--) { // 下沿：右→左
+        const xx = xa + (span * s) / steps;
+        const off = Math.sin(xx * freq + phase) * amp + (rng() - 0.5) * amp * 0.5;
+        ctx.lineTo(xx, yc + off + halfTh);
+      }
+      ctx.closePath();
+      ctx.fill();
+    };
+    for (let r = 0; r < nRows; r++) {
+      const yc = yAt(r * rowF + rowF * 0.5); // 本根毛的中线（竖直分布）
+      const halfTh = rowF * thick * (0.16 + rng() * 0.18); // 粗细随机、偏细
+      const phase = rng() * Math.PI * 2;
+      const dHead = Math.min(w * 0.5, rng() * w); // 起笔侧咬进长度，≤半个字宽
+      const dTail = Math.min(w * 0.5, rng() * w); // 收笔侧咬进长度，≤半个字宽
+      const hx = leftX(0) + (rng() - 0.5) * thick * 0.15; // 起笔端头参差
+      const tx = rightX(1) + (rng() - 0.5) * thick * 0.15; // 收笔端头参差
+      bristleLine(hx, fHead + dHead, yc, halfTh, phase); // 起笔侧细毛，咬进实心段
+      bristleLine(fTail - dTail, tx, yc, halfTh, phase + 1.9); // 收笔侧细毛
+    }
     ctx.restore();
   }
   // 四角星光 ✦：中心收腰的凹边四角星，比直线/箭头更柔和耐看。r=外接半径，color/alpha 控制浓淡。

@@ -592,6 +592,29 @@
     }
     .ac-share-img { max-height: 62vh; max-width: 100%; border-radius: 8px; border: 1px solid #eceef4; }
     .ac-share-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+    /* 划线调色板浮条：贴图片下缘悬浮，不占额外高度（卡片底部中间本就是留白，遮挡最小）。
+       壳用 inline-block（同 annotate 的 .ac-anno-wrap），让浮条的 50% 居中贴合图片实际宽度 */
+    .ac-share-view { position: relative; display: inline-block; line-height: 0; max-width: 100%; }
+    .ac-share-float {
+      position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%);
+      display: flex; align-items: center; gap: 7px; padding: 5px 11px; border-radius: 999px;
+      background: rgba(255,255,255,.93); border: 1px solid rgba(31,36,48,.14);
+      box-shadow: 0 4px 16px rgba(15,18,28,.18); backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+    }
+    .ac-share-dot {
+      width: 20px; height: 20px; padding: 0; border-radius: 50%; cursor: pointer;
+      border: 1px solid rgba(31,36,48,.18); transition: transform .12s;
+    }
+    .ac-share-dot:hover { transform: scale(1.12); }
+    .ac-share-dot.on { outline: 2px solid #4f6ef7; outline-offset: 1px; }
+    .ac-share-icn {
+      width: 26px; height: 26px; padding: 0; border: none; border-radius: 50%; background: transparent;
+      color: #5b6172; cursor: pointer; display: inline-flex; align-items: center; justify-content: center;
+    }
+    .ac-share-icn:hover { background: #eef1fb; }
+    .ac-share-icn.on { background: #4f6ef7; color: #fff; }
+    .ac-share-vsep { width: 1px; height: 18px; background: rgba(31,36,48,.14); }
     .ac-share-btn {
       padding: 8px 18px; border-radius: 8px; border: none; cursor: pointer;
       font: 600 13px/1 system-ui, sans-serif;
@@ -642,6 +665,15 @@
       img.src = dataUrl;
       img.alt = opts.alt || '分享卡片预览';
       view = img;
+    }
+    // 悬浮工具条（划线调色板）需要一层 relative 壳把浮条锚在图片下缘；没有浮条时不包壳，
+    // 免得干扰标注编辑器（自带 vh 布局）的尺寸测量
+    const fActs = opts.floatActions || [];
+    let host = box;
+    if (fActs.length) {
+      host = document.createElement('div');
+      host.className = 'ac-share-view';
+      host.append(view);
     }
     // 图片可被扩展操作替换（如截图主题包背景快捷开关重合成），复制/下载始终取当前图
     let curUrl = dataUrl;
@@ -701,6 +733,44 @@
       }
     };
     if (anno) anno.onChange(autoCopy);
+    // 悬浮工具条：色点 / 图标按钮（act.icon 给 SVG 原文）+ 分隔符（act.kind === 'sep'）。
+    // act.selected 可以是函数，每次点击后就地重算选中态——这样调色板换色不用重建整个浮层
+    if (fActs.length) {
+      const fb = document.createElement('div');
+      fb.className = 'ac-share-float';
+      const items = [];
+      for (const act of fActs) {
+        if (act.kind === 'sep') {
+          const s = document.createElement('span');
+          s.className = 'ac-share-vsep';
+          fb.append(s);
+          continue;
+        }
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.title = act.label || '';
+        if (act.icon) {
+          b.className = 'ac-share-icn';
+          b.innerHTML = act.icon;
+        } else {
+          b.className = 'ac-share-dot';
+          b.style.background = act.bg || '#fff';
+        }
+        items.push([b, act]);
+        fb.append(b);
+      }
+      const isOn = (act) => !!(typeof act.selected === 'function' ? act.selected() : act.selected);
+      const sync = () => { for (const [b, act] of items) b.classList.toggle('on', isOn(act)); };
+      for (const [b, act] of items) {
+        b.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          try { await act.onClick(updateImg); } catch { /* 失败保持原状 */ }
+          sync();
+        });
+      }
+      sync();
+      host.append(fb);
+    }
     // 点卡片切换划线高亮：仅当调用方提供 onImageClick（分享卡走此交互，此时标注层已关闭）。
     // 传回的是相对图片的分数坐标（0~1），由调用方换算到卡片像素做词块命中；updateImg 供其重绘并自动回写剪贴板
     if (typeof opts.onImageClick === 'function' && view.addEventListener) {
@@ -742,7 +812,10 @@
       acts.append(b);
     }
     acts.append(btnDl, btnCopy, btnClose);
-    box.append(view, acts);
+    // 无浮条时 host 就是 box 本身，视图仍要直挂 box，别漏挂
+    if (host === box) box.append(view);
+    else box.append(host);
+    box.append(acts);
     mask.append(box);
     mask.addEventListener('click', (e) => { if (e.target === mask) close(); });
     root.appendChild(mask);
