@@ -216,13 +216,17 @@
     // 磨砂玻璃模式下所有文字统一走 put（羽化白描边 + 原色填充），强度由面板不透明度自动反推；
     // 装饰性大引号是淡色水印，不需要可读性，保持原样不描边
     const G = glass ? glassTextHalo(glassAlpha) : { halo: 0, s: 0 };
-    // 描边宽度必须随字号等比收窄（30px 引文为基准）：
-    // strokeText 的白描边是以字形轮廓为中心向两侧各吃掉 lineWidth/2 的，
-    // 13~17px 的小字笔画本身才 1.3~1.7px 宽，套用 30px 引文的描边宽度（低不透明度下可达 2.5px+）
-    // 会把笔画整根吃掉、字糊成一团白影。等比后各类字号的相对粗细才一致，引文口径完全不变。
+    // 描边的「线宽」与「白描边不透明度」必须随字号同步等比收窄（30px 引文为基准）：
+    // v1.95.0 只收窄了线宽、没收窄不透明度——13~17px 小字仍套用引文那档白描边浓度（约 0.44 的白色），
+    // 白边把笔画整根糊成白影、字看不清。这里把 lineWidth 与 strength 一起按 fs/30 收窄，
+    // 引文（fs≥30）比例=1 口径完全不变，小字两侧白边明显变薄变淡。上限=1 保证引文不被二次收窄。
     const HALO_REF_FS = 30;
-    const haloAt = (fs) => (G.halo > 0 ? Math.max(0.3, G.halo * Math.min(1, fs / HALO_REF_FS)) : 0);
-    const put = (t, x, y, fs) => { frostText(ctx, t, x, y, haloAt(fs), G.s); ctx.fillText(t, x, y); };
+    const put = (t, x, y, fs) => {
+      if (G.halo <= 0) { ctx.fillText(t, x, y); return; }
+      const r = Math.min(1, fs / HALO_REF_FS);
+      frostText(ctx, t, x, y, Math.max(0.35, G.halo * r), Math.max(0.16, G.s * r));
+      ctx.fillText(t, x, y);
+    };
 
     // 顶部品牌条：蓝点 + AnyComment 划线分享（主题包版式落在面板顶部，右侧加日期·条目名）
     const brandY = usePack ? panelTop + 44 : cy + 44;
