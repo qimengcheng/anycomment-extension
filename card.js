@@ -216,7 +216,13 @@
     // 磨砂玻璃模式下所有文字统一走 put（羽化白描边 + 原色填充），强度由面板不透明度自动反推；
     // 装饰性大引号是淡色水印，不需要可读性，保持原样不描边
     const G = glass ? glassTextHalo(glassAlpha) : { halo: 0, s: 0 };
-    const put = (t, x, y) => { frostText(ctx, t, x, y, G.halo, G.s); ctx.fillText(t, x, y); };
+    // 描边宽度必须随字号等比收窄（30px 引文为基准）：
+    // strokeText 的白描边是以字形轮廓为中心向两侧各吃掉 lineWidth/2 的，
+    // 13~17px 的小字笔画本身才 1.3~1.7px 宽，套用 30px 引文的描边宽度（低不透明度下可达 2.5px+）
+    // 会把笔画整根吃掉、字糊成一团白影。等比后各类字号的相对粗细才一致，引文口径完全不变。
+    const HALO_REF_FS = 30;
+    const haloAt = (fs) => (G.halo > 0 ? Math.max(0.3, G.halo * Math.min(1, fs / HALO_REF_FS)) : 0);
+    const put = (t, x, y, fs) => { frostText(ctx, t, x, y, haloAt(fs), G.s); ctx.fillText(t, x, y); };
 
     // 顶部品牌条：蓝点 + AnyComment 划线分享（主题包版式落在面板顶部，右侧加日期·条目名）
     const brandY = usePack ? panelTop + 44 : cy + 44;
@@ -225,10 +231,10 @@
     ctx.font = fontMain(15, 500);
     ctx.fillStyle = '#8a90a5';
     ctx.textBaseline = 'middle';
-    put('AnyComment · 划线分享', cx + 46, brandY + 1);
+    put('AnyComment · 划线分享', cx + 46, brandY + 1, 15);
     if (usePack) {
       ctx.textAlign = 'right';
-      put(pack.label || pack.name, W - PAD, brandY + 1);
+      put(pack.label || pack.name, W - PAD, brandY + 1, 15);
       ctx.textAlign = 'left';
     }
 
@@ -255,7 +261,7 @@
       // 先画文字，再把荧光笔带压在文字之上（真马克笔"划在字上"；multiply 混色下深色字仍透出）
       tokens.forEach((line, i) => {
         const yTop = quoteTop + i * lineH - 20;
-        line.forEach((tok) => put(tok.t, PAD + tok.x, yTop));
+        line.forEach((tok) => put(tok.t, PAD + tok.x, yTop, 30));
       });
       tokens.forEach((line, i) => {
         const yTop = quoteTop + i * lineH - 20;
@@ -281,7 +287,7 @@
       LAST_QUOTE = { W, H, PAD, quoteTop, lineH, fs: 30, tokens };
     } else {
       LAST_QUOTE = null;
-      lines.forEach((ln, i) => put(ln, PAD, quoteTop + i * lineH - 20));
+      lines.forEach((ln, i) => put(ln, PAD, quoteTop + i * lineH - 20, 30));
     }
 
     // 出处：页面标题 + 站点（右侧留给二维码）
@@ -292,11 +298,11 @@
     ctx.fillStyle = '#4b5563';
     // 前缀也要计入测量，否则长标题会钻到二维码底下
     const srcText = `—— ${title || site || ''}`;
-    put(wrapText(ctx, srcText, (qr ? qrLeft - PAD : W - PAD * 2) - 20, 1)[0] || '', PAD, srcTitleY);
+    put(wrapText(ctx, srcText, (qr ? qrLeft - PAD : W - PAD * 2) - 20, 1)[0] || '', PAD, srcTitleY, 17);
     ctx.font = fontMain(14, 400);
     ctx.fillStyle = '#a5abc0';
     const domain = (site || '').replace(/^www\./, '');
-    put(wrapText(ctx, domain, (qr ? qrLeft - PAD : W - PAD * 2) - 20, 1)[0] || '', PAD, srcDomainY);
+    put(wrapText(ctx, domain, (qr ? qrLeft - PAD : W - PAD * 2) - 20, 1)[0] || '', PAD, srcDomainY, 14);
 
     if (qr) {
       // 二维码白底（含静默区）+ 整像素模块
@@ -316,13 +322,13 @@
       ctx.font = fontMain(13, 400);
       ctx.fillStyle = '#a5abc0';
       const hint = '扫码阅读原文';
-      put(hint, qrLeft + (qrPx - ctx.measureText(hint).width) / 2, hintY);
+      put(hint, qrLeft + (qrPx - ctx.measureText(hint).width) / 2, hintY, 13);
     } else {
       const d = new Date();
       const ds = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
       ctx.font = fontMain(13, 400);
       ctx.fillStyle = '#a5abc0';
-      put(ds, W - PAD - ctx.measureText(ds).width, srcDomainY);
+      put(ds, W - PAD - ctx.measureText(ds).width, srcDomainY, 13);
     }
 
     return canvas.toDataURL('image/png');
