@@ -20,7 +20,91 @@
     { id: 'mosaic', label: '马赛克', fill: true, svg: '<path d="M2.6 2.6h4.8v4.8H2.6zM8.6 2.6h4.8v4.8H8.6zM2.6 8.6h4.8v4.8H2.6zM8.6 8.6h4.8v4.8H8.6z"/>' },
     { id: 'text', label: '文字', svg: '<path d="M3 3.6h10"/><path d="M8 3.6v8.8"/>' },
     { id: 'number', label: '序号', svg: '<circle cx="8" cy="8" r="6"/><text x="8" y="11.4" font-size="9" font-weight="700" text-anchor="middle" fill="currentColor" stroke="none">1</text>' },
+    { id: 'sticker', label: '贴纸', svg: '<path d="M2 4h8l4 4v6a1 1 0 01-1 1H3a1 1 0 01-1-1V5a1 1 0 011-1z" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M5 7l1.5 2 2-1.5-1.5 2 2 .8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>' },
   ];
+
+  // 内置手账贴纸库：原创 SVG 设计，清新手绘风格
+  // 每个贴纸用 SVG 字符串定义，运行时转为 Image 对象缓存
+  const STICKER_SVG = {
+    // ---------- 装饰小物 ----------
+    star_pink: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path d="M32 6l6.5 18.5L57 27l-15 12 5.5 19L32 47l-15.5 11 5.5-19L7 27l18.5-2.5z" fill="#ff8fab" stroke="#e05780" stroke-width="2" stroke-linejoin="round"/><circle cx="26" cy="24" r="2.5" fill="#fff" opacity=".7"/></svg>`,
+    heart_red: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path d="M32 54s-22-13-22-30a14 14 0 0126-8 14 14 0 0126 8c0 17-22 30-22 30z" fill="#ff6b6b" stroke="#d64545" stroke-width="2" stroke-linejoin="round"/><ellipse cx="22" cy="22" rx="4" ry="3" fill="#fff" opacity=".45" transform="rotate(-25 22 22)"/></svg>`,
+    flower_yellow: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><g fill="#ffd93d" stroke="#f5a623" stroke-width="2" stroke-linejoin="round"><ellipse cx="32" cy="14" rx="8" ry="12"/><ellipse cx="50" cy="32" rx="12" ry="8"/><ellipse cx="32" cy="50" rx="8" ry="12"/><ellipse cx="14" cy="32" rx="12" ry="8"/></g><circle cx="32" cy="32" r="10" fill="#ff8c42" stroke="#e67329" stroke-width="2"/><circle cx="29" cy="29" r="2.5" fill="#fff" opacity=".5"/></svg>`,
+    bow_pink: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path d="M12 22c0-8 10-12 18-6l2 4 2-4c8-6 18-2 18 6 0 8-12 14-20 10l-2-4-2 4c-8 4-20-2-20-10z" fill="#ff8fab" stroke="#e05780" stroke-width="2" stroke-linejoin="round"/><rect x="28" y="24" width="8" height="16" rx="2" fill="#ff6b95" stroke="#e05780" stroke-width="2"/><path d="M28 38l-6 14M36 38l6 14" stroke="#e05780" stroke-width="2" stroke-linecap="round"/></svg>`,
+    leaf_green: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path d="M12 52c0-22 18-40 40-40 0 22-18 40-40 40z" fill="#7ec850" stroke="#5ba336" stroke-width="2" stroke-linejoin="round"/><path d="M14 50L50 14" stroke="#5ba336" stroke-width="2" stroke-linecap="round"/><path d="M20 40l8-8M26 46l10-10M16 34l6-6" stroke="#5ba336" stroke-width="1.5" stroke-linecap="round" opacity=".7"/></svg>`,
+    cloud_blue: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path d="M18 44c-8 0-12-6-10-13 2-6 7-9 13-9 1-7 7-12 15-12 8 0 14 5 16 12 7 1 12 6 12 13s-6 12-13 12H18z" fill="#a8d8ff" stroke="#6ba8e0" stroke-width="2" stroke-linejoin="round"/><ellipse cx="24" cy="26" rx="6" ry="4" fill="#fff" opacity=".5"/></svg>`,
+    rainbow: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><g fill="none" stroke-width="5" stroke-linecap="round"><path d="M8 48a24 24 0 0148 0" stroke="#ff6b6b"/><path d="M14 48a18 18 0 0136 0" stroke="#ffd93d"/><path d="M20 48a12 12 0 0124 0" stroke="#7ec850"/><path d="M26 48a6 6 0 0112 0" stroke="#6ba8e0"/></g></svg>`,
+    sparkle_yellow: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><g fill="#ffd93d" stroke="#f5a623" stroke-width="2" stroke-linejoin="round"><path d="M32 6l4 22 22 4-22 4-4 22-4-22-22-4 22-4z"/><path d="M50 16l2 8 8 2-8 2-2 8-2-8-8-2 8-2z" transform="translate(0 28)"/></g></svg>`,
+    clover: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><g fill="#7ec850" stroke="#5ba336" stroke-width="2" stroke-linejoin="round"><ellipse cx="32" cy="20" rx="12" ry="14"/><ellipse cx="44" cy="32" rx="14" ry="12"/><ellipse cx="32" cy="44" rx="12" ry="14"/><ellipse cx="20" cy="32" rx="14" ry="12"/></g><path d="M32 48v10" stroke="#5ba336" stroke-width="3" stroke-linecap="round"/></svg>`,
+    balloon_pink: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><ellipse cx="32" cy="26" rx="18" ry="22" fill="#ff8fab" stroke="#e05780" stroke-width="2"/><ellipse cx="24" cy="18" rx="5" ry="7" fill="#fff" opacity=".45" transform="rotate(-20 24 18)"/><path d="M32 48l-2 4h4l-2-4z" fill="#e05780"/><path d="M32 52c0 4-4 6-4 10" stroke="#8a90a5" stroke-width="1.5" fill="none" stroke-linecap="round"/></svg>`,
+    gift_box: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect x="10" y="24" width="44" height="32" rx="3" fill="#ffd93d" stroke="#f5a623" stroke-width="2"/><rect x="10" y="20" width="44" height="10" rx="2" fill="#ff8c42" stroke="#e67329" stroke-width="2"/><rect x="28" y="20" width="8" height="36" fill="#ff6b6b" stroke="#d64545" stroke-width="1.5"/><path d="M32 20c-8-8-16-4-16 4 0 6 10 6 16 0M32 20c8-8 16-4 16 4 0 6-10 6-16 0" fill="#ff6b6b" stroke="#d64545" stroke-width="1.5" stroke-linejoin="round"/></svg>`,
+    crystal: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path d="M32 6l20 18-12 34H24L12 24z" fill="#a8d8ff" stroke="#6ba8e0" stroke-width="2" stroke-linejoin="round"/><path d="M12 24h40M32 6v52M20 24l12 34M44 24L32 58" stroke="#6ba8e0" stroke-width="1.5" opacity=".5"/><path d="M20 14l6 6" stroke="#fff" stroke-width="3" stroke-linecap="round" opacity=".6"/></svg>`,
+
+    // ---------- 标签/对话框 ----------
+    tag_blue: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path d="M8 18h32l16 16-16 16H8a2 2 0 01-2-2V20a2 2 0 012-2z" fill="#6ba8e0" stroke="#4a8cc7" stroke-width="2" stroke-linejoin="round"/><circle cx="18" cy="32" r="4" fill="#fff" opacity=".6"/></svg>`,
+    speech_pink: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path d="M12 16h40a4 4 0 014 4v20a4 4 0 01-4 4H28l-10 8v-8H12a4 4 0 01-4-4V20a4 4 0 014-4z" fill="#ffc1d6" stroke="#e07ba0" stroke-width="2" stroke-linejoin="round"/></svg>`,
+    sticky_note: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path d="M10 10h38l6 6v38a2 2 0 01-2 2H10a2 2 0 01-2-2V12a2 2 0 012-2z" fill="#fff59e" stroke="#e0c840" stroke-width="2" stroke-linejoin="round"/><path d="M48 10v6h6" stroke="#e0c840" stroke-width="2" stroke-linejoin="round"/><path d="M16 24h24M16 32h28M16 40h20M16 48h16" stroke="#d4b830" stroke-width="1.5" stroke-linecap="round" opacity=".6"/></svg>`,
+    flag_red: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path d="M16 8v48" stroke="#8a90a5" stroke-width="3" stroke-linecap="round"/><path d="M16 10h34l-6 8 6 8H16z" fill="#ff6b6b" stroke="#d64545" stroke-width="2" stroke-linejoin="round"/></svg>`,
+    tape_pink: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 32"><rect x="0" y="8" width="64" height="16" fill="#ffc1d6" opacity=".85"/><path d="M0 8h64v16H0z" fill="url(#tp)" opacity=".5"/><defs><pattern id="tp" width="8" height="16" patternUnits="userSpaceOnUse"><path d="M0 0h4v16H0z" fill="#fff" opacity=".3"/></pattern></defs></svg>`,
+    tape_blue: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 32"><rect x="0" y="8" width="64" height="16" fill="#a8d8ff" opacity=".85"/><defs><pattern id="tb" width="10" height="10" patternUnits="userSpaceOnUse"><circle cx="5" cy="5" r="1.5" fill="#fff" opacity=".5"/></pattern></defs><rect x="0" y="8" width="64" height="16" fill="url(#tb)" opacity=".6"/></svg>`,
+    tape_yellow: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 32"><rect x="0" y="8" width="64" height="16" fill="#ffe08a" opacity=".85"/><defs><pattern id="ty" width="6" height="16" patternUnits="userSpaceOnUse"><path d="M3 0v16" stroke="#fff" stroke-width="1.5" opacity=".5"/></pattern></defs><rect x="0" y="8" width="64" height="16" fill="url(#ty)" opacity=".6"/></svg>`,
+    tape_green: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 32"><rect x="0" y="8" width="64" height="16" fill="#b8e0a0" opacity=".85"/><defs><pattern id="tg" width="12" height="12" patternUnits="userSpaceOnUse"><path d="M0 6l6-6 6 6-6 6z" fill="#fff" opacity=".35"/></pattern></defs><rect x="0" y="8" width="64" height="16" fill="url(#tg)" opacity=".6"/></svg>`,
+
+    // ---------- 生活元素 ----------
+    coffee: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path d="M16 20h28v26a6 6 0 01-6 6H22a6 6 0 01-6-6V20z" fill="#f5e6d3" stroke="#c4a77d" stroke-width="2" stroke-linejoin="round"/><path d="M44 24h6a6 6 0 010 12h-6" fill="none" stroke="#c4a77d" stroke-width="2" stroke-linecap="round"/><ellipse cx="30" cy="20" rx="14" ry="4" fill="#8b5a3c" stroke="#6b4226" stroke-width="2"/><g fill="none" stroke="#a89078" stroke-width="2" stroke-linecap="round"><path d="M22 10c0-4 4-6 4-10M30 10c0-4 4-6 4-10M38 10c0-4 4-6 4-10"/></g></svg>`,
+    camera: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect x="8" y="18" width="48" height="36" rx="4" fill="#5b6172" stroke="#3d4150" stroke-width="2"/><path d="M18 18l4-6h20l4 6" fill="#5b6172" stroke="#3d4150" stroke-width="2" stroke-linejoin="round"/><circle cx="32" cy="36" r="12" fill="#fff" stroke="#3d4150" stroke-width="2"/><circle cx="32" cy="36" r="7" fill="#2f6bff" stroke="#1f4fcc" stroke-width="2"/><circle cx="48" cy="26" r="3" fill="#ff6b6b" stroke="#d64545" stroke-width="1.5"/></svg>`,
+    music_note: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path d="M28 10l20-4v30" stroke="#8b5cf6" stroke-width="3" stroke-linecap="round" fill="none"/><ellipse cx="24" cy="40" rx="10" ry="12" fill="#8b5cf6" stroke="#6d47d9" stroke-width="2"/><ellipse cx="44" cy="36" rx="8" ry="10" fill="#a78bfa" stroke="#8b5cf6" stroke-width="2"/><path d="M48 36V6l-20 4v30" stroke="#6d47d9" stroke-width="2" stroke-linecap="round" fill="none"/></svg>`,
+    book: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path d="M10 14h20v38c-6 0-12-2-16-6V16a2 2 0 012-2zM54 14H34v38c6 0 12-2 16-6V16a2 2 0 00-2-2z" fill="#ff8c42" stroke="#e67329" stroke-width="2" stroke-linejoin="round"/><path d="M32 14v38" stroke="#e67329" stroke-width="2"/><path d="M16 22h12M16 28h12M16 34h10M36 22h12M36 28h12M36 34h10" stroke="#c45e20" stroke-width="1.5" stroke-linecap="round" opacity=".7"/></svg>`,
+    envelope: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect x="8" y="16" width="48" height="32" rx="3" fill="#fff" stroke="#8a90a5" stroke-width="2"/><path d="M8 18l24 20 24-20" fill="none" stroke="#8a90a5" stroke-width="2" stroke-linejoin="round"/><circle cx="46" cy="40" r="6" fill="#ff6b6b" stroke="#d64545" stroke-width="1.5"/><text x="46" y="43" font-size="9" font-weight="bold" fill="#fff" text-anchor="middle">3</text></svg>`,
+    bulb: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path d="M32 10c-10 0-18 8-18 18 0 8 5 13 8 17l2 5h16l2-5c3-4 8-9 8-17 0-10-8-18-18-18z" fill="#ffd93d" stroke="#f5a623" stroke-width="2" stroke-linejoin="round"/><rect x="26" y="50" width="12" height="4" rx="1" fill="#8a90a5" stroke="#6b7080" stroke-width="1.5"/><rect x="28" y="55" width="8" height="3" rx="1" fill="#8a90a5" stroke="#6b7080" stroke-width="1.5"/><path d="M24 22l4 4M40 22l-4 4M32 18v8" stroke="#f5a623" stroke-width="1.5" stroke-linecap="round"/></svg>`,
+    pencil: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path d="M10 54L46 18l8 8L18 62l-8 2z" fill="#ffd93d" stroke="#f5a623" stroke-width="2" stroke-linejoin="round"/><path d="M46 18l8 8" stroke="#d64545" stroke-width="3" stroke-linecap="round"/><path d="M10 54l8-8" stroke="#c4a77d" stroke-width="2"/><path d="M40 12l12 12" stroke="none"/><path d="M44 16l4 4" stroke="#d64545" stroke-width="2"/></svg>`,
+    plant: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path d="M20 40h24v14a2 2 0 01-2 2H22a2 2 0 01-2-2V40z" fill="#c4a77d" stroke="#a88860" stroke-width="2" stroke-linejoin="round"/><path d="M32 40V20" stroke="#5ba336" stroke-width="3" stroke-linecap="round"/><path d="M32 28c-8-4-12-12-10-20 6 0 12 6 10 16z" fill="#7ec850" stroke="#5ba336" stroke-width="2" stroke-linejoin="round"/><path d="M32 22c8-4 12-12 10-20-6 0-12 6-10 16z" fill="#7ec850" stroke="#5ba336" stroke-width="2" stroke-linejoin="round"/><circle cx="28" cy="14" r="2" fill="#ff8fab"/><circle cx="36" cy="18" r="2" fill="#ffd93d"/></svg>`,
+    cake: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path d="M8 38h48v16a2 2 0 01-2 2H10a2 2 0 01-2-2V38z" fill="#ffc1d6" stroke="#e07ba0" stroke-width="2" stroke-linejoin="round"/><path d="M8 38c4-6 20-6 24 0s20 6 24 0" fill="#ff8fab" stroke="#e05780" stroke-width="2" stroke-linejoin="round"/><rect x="30" y="14" width="4" height="16" fill="#ffd93d" stroke="#f5a623" stroke-width="1.5"/><path d="M32 8c-2 4 2 6 0 10 2-4-2-6 0-10z" fill="#ff6b6b"/></svg>`,
+    glasses: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><circle cx="18" cy="32" r="12" fill="none" stroke="#5b6172" stroke-width="3"/><circle cx="46" cy="32" r="12" fill="none" stroke="#5b6172" stroke-width="3"/><path d="M30 32h4" stroke="#5b6172" stroke-width="3" stroke-linecap="round"/><path d="M6 32l-4-2M58 32l4-2" stroke="#5b6172" stroke-width="3" stroke-linecap="round"/><circle cx="14" cy="28" r="3" fill="#a8d8ff" opacity=".6"/></svg>`,
+    calendar: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect x="10" y="14" width="44" height="42" rx="4" fill="#fff" stroke="#5b6172" stroke-width="2"/><rect x="10" y="14" width="44" height="12" rx="4" fill="#ff6b6b" stroke="#d64545" stroke-width="2"/><path d="M20 6v8M44 6v8" stroke="#5b6172" stroke-width="2.5" stroke-linecap="round"/><g fill="#5b6172" font-size="8" text-anchor="middle" font-family="sans-serif"><text x="20" y="34">1</text><text x="28" y="34">2</text><text x="36" y="34">3</text><text x="44" y="34">4</text><text x="20" y="44">5</text><text x="28" y="44">6</text><text x="36" y="44">7</text><text x="44" y="44">8</text><text x="20" y="52">9</text><text x="28" y="52">10</text></g><circle cx="36" cy="41" r="6" fill="#ff6b6b" opacity=".25"/></svg>`,
+
+    // ---------- 手绘符号 ----------
+    check_mark: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path d="M12 32l14 14 26-28" fill="none" stroke="#22c55e" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+    cross_mark: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path d="M16 16l32 32M48 16L16 48" fill="none" stroke="#ff6b6b" stroke-width="5" stroke-linecap="round"/></svg>`,
+    exclamation: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><circle cx="32" cy="52" r="4" fill="#ff8c1a"/><rect x="28" y="10" width="8" height="30" rx="4" fill="#ff8c1a"/></svg>`,
+    question: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path d="M22 20c0-8 8-14 18-14s14 6 14 12c0 8-10 8-10 14" fill="none" stroke="#8b5cf6" stroke-width="4" stroke-linecap="round"/><circle cx="34" cy="50" r="4" fill="#8b5cf6"/></svg>`,
+    arrow_curved: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path d="M12 48c0-16 12-28 28-28h8" fill="none" stroke="#2f6bff" stroke-width="4" stroke-linecap="round"/><path d="M40 14l8-6 6 8" fill="none" stroke="#2f6bff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+    hand_drawn_circle: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path d="M32 8c14 0 24 10 24 24s-10 24-24 24S8 46 8 32 18 8 32 8z" fill="none" stroke="#e5342c" stroke-width="3" stroke-linecap="round" stroke-dasharray="4 3"/></svg>`,
+    underline: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><path d="M10 48c6-3 12-4 22-4s16 1 22 4" fill="none" stroke="#ffd93d" stroke-width="6" stroke-linecap="round"/></svg>`,
+  };
+
+  const STICKER_CATEGORIES = [
+    {
+      name: '装饰',
+      items: ['star_pink', 'heart_red', 'flower_yellow', 'bow_pink', 'leaf_green', 'cloud_blue', 'rainbow', 'sparkle_yellow', 'clover', 'balloon_pink', 'gift_box', 'crystal'],
+    },
+    {
+      name: '标签',
+      items: ['tag_blue', 'speech_pink', 'sticky_note', 'flag_red', 'tape_pink', 'tape_blue', 'tape_yellow', 'tape_green', 'check_mark', 'cross_mark', 'exclamation', 'question'],
+    },
+    {
+      name: '生活',
+      items: ['coffee', 'camera', 'music_note', 'book', 'envelope', 'bulb', 'pencil', 'plant', 'cake', 'glasses', 'calendar', 'arrow_curved'],
+    },
+    {
+      name: '符号',
+      items: ['hand_drawn_circle', 'underline', 'star_pink', 'heart_red', 'sparkle_yellow', 'check_mark', 'cross_mark', 'exclamation', 'question', 'arrow_curved', 'flower_yellow', 'gift_box'],
+    },
+  ];
+
+  // SVG 贴纸转 Image 对象的缓存
+  const stickerImageCache = new Map();
+  function getStickerImage(id) {
+    if (stickerImageCache.has(id)) return stickerImageCache.get(id);
+    const svg = STICKER_SVG[id];
+    if (!svg) return null;
+    const img = new Image();
+    // SVG 必须有 xmlns，直接用 dataURL 加载
+    const encoded = encodeURIComponent(svg);
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encoded;
+    stickerImageCache.set(id, img);
+    return img;
+  }
 
   const CSS = `
     .ac-anno-stage { display: flex; flex-direction: column; gap: 10px; align-items: center; max-width: 100%; }
@@ -28,6 +112,7 @@
       display: flex; align-items: center; gap: 5px; flex-wrap: wrap; justify-content: center;
       padding: 7px 9px; border-radius: 10px; background: #f6f7fb; border: 1px solid #eceef4;
       font: 500 12px/1 ${FONT}; user-select: none;
+      position: relative; z-index: 2;
     }
     .ac-anno-tool {
       width: 30px; height: 30px; padding: 0; border: none; border-radius: 7px;
@@ -53,7 +138,7 @@
     }
     .ac-anno-sz.on { background: #4f6ef7; color: #fff; }
     .ac-anno-sz i { display: block; border-radius: 99px; background: currentColor; }
-    .ac-anno-wrap { position: relative; display: inline-block; line-height: 0; max-width: 100%; }
+    .ac-anno-wrap { position: relative; z-index: 1; display: inline-block; line-height: 0; max-width: 100%; }
     /* 宽度上限直接用 vw：wrap 是 shrink-to-fit，canvas 再用 100% 会与父级宽度互相依赖算不准 */
     .ac-anno-base { display: block; max-height: 58vh; max-width: 88vw; border-radius: 8px; border: 1px solid #eceef4; }
     .ac-anno-layer { position: absolute; left: 0; top: 0; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
@@ -63,6 +148,54 @@
       background: #fff; color: #1f2430; box-shadow: 0 6px 18px rgba(15,18,28,.22);
     }
     .ac-anno-tip { color: #8a90a5; font: 400 11px/1 ${FONT}; }
+    /* 贴纸选择面板 */
+    .ac-anno-sticker-panel {
+      position: absolute; left: 50%; top: calc(100% + 6px); transform: translateX(-50%);
+      z-index: 10; background: #fff; border: 1px solid #e2e5ef; border-radius: 10px;
+      box-shadow: 0 6px 20px rgba(15,18,28,.15); padding: 8px; width: 280px;
+      font: 500 12px/1 ${FONT}; user-select: none;
+    }
+    .ac-anno-sticker-cats { display: flex; gap: 4px; margin-bottom: 8px; border-bottom: 1px solid #eef0f6; padding-bottom: 6px; }
+    .ac-anno-sticker-cat {
+      padding: 4px 10px; border-radius: 6px; cursor: pointer; color: #5b6172; font-size: 12px;
+    }
+    .ac-anno-sticker-cat:hover { background: #f0f2fa; }
+    .ac-anno-sticker-cat.on { background: #4f6ef7; color: #fff; }
+    .ac-anno-sticker-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
+    .ac-anno-sticker-item {
+      display: flex; align-items: center; justify-content: center;
+      width: 100%; aspect-ratio: 1; font-size: 24px; cursor: pointer;
+      border-radius: 6px; transition: background .15s;
+    }
+    .ac-anno-sticker-item:hover { background: #f0f2fa; transform: scale(1.1); }
+    /* 选中标注框 */
+    .ac-anno-sel {
+      position: absolute; pointer-events: none; border: 1.5px dashed #4f6ef7;
+      box-sizing: border-box; border-radius: 2px;
+    }
+    .ac-anno-sel-handle {
+      position: absolute; width: 12px; height: 12px; background: #fff;
+      border: 1.5px solid #4f6ef7; border-radius: 50%; pointer-events: auto;
+      cursor: grab; box-sizing: border-box;
+    }
+    .ac-anno-sel-handle:hover { background: #4f6ef7; }
+    .ac-anno-sel-handle.tl { left: -6px; top: -6px; cursor: nwse-resize; }
+    .ac-anno-sel-handle.tr { right: -6px; top: -6px; cursor: nesw-resize; }
+    .ac-anno-sel-handle.bl { left: -6px; bottom: -6px; cursor: nesw-resize; }
+    .ac-anno-sel-handle.br { right: -6px; bottom: -6px; cursor: nwse-resize; }
+    .ac-anno-sel-rotate {
+      position: absolute; width: 14px; height: 14px; left: 50%; top: -22px;
+      transform: translateX(-50%); background: #fff; border: 1.5px solid #4f6ef7;
+      border-radius: 50%; pointer-events: auto; cursor: grab; box-sizing: border-box;
+      display: flex; align-items: center; justify-content: center; font-size: 9px; color: #4f6ef7;
+    }
+    .ac-anno-sel-rotate:hover { background: #4f6ef7; color: #fff; }
+    .ac-anno-sel-line {
+      position: absolute; left: 50%; top: -10px; width: 1.5px; height: 10px;
+      background: #4f6ef7; transform: translateX(-50%);
+    }
+    .ac-anno-sticker-cursor { cursor: grab; }
+    .ac-anno-sticker-cursor:active { cursor: grabbing; }
   `;
 
   function ensureStyle(root) {
@@ -107,6 +240,9 @@
     let seq = 0;
     let onChange = null;
     let raf = 0;
+    let selectedIdx = -1; // 选中的贴纸索引
+    let stickerPanelEl = null; // 贴纸选择面板
+    let selOverlay = null; // 选中标注框覆盖层
 
     const ctx = cv.getContext('2d');
     const bctx = cvBase.getContext('2d');
@@ -195,9 +331,203 @@
     function setTool(id) {
       tool = id;
       toolBtns.forEach((b, k) => b.classList.toggle('on', k === id));
-      tip.textContent = id === 'text' ? '点击图片输入文字，Enter 完成' : id === 'number' ? '点击图片添加序号' : '';
+      tip.textContent = id === 'text' ? '点击图片输入文字，Enter 完成' : id === 'number' ? '点击图片添加序号' : id === 'sticker' ? '选择贴纸后点击添加，拖拽调整' : '';
+      if (id === 'sticker') {
+        showStickerPanel();
+      } else {
+        hideStickerPanel();
+        clearSelection();
+      }
     }
     setTool(tool);
+
+    // 隐藏/显示工具栏（供外部切换模式用，如划线分享的荧光笔/贴纸模式切换）
+    function showToolbar() {
+      bar.style.display = '';
+      cv.classList.remove('ac-anno-no-toolbar');
+    }
+    function hideToolbar() {
+      bar.style.display = 'none';
+      hideStickerPanel();
+      clearSelection();
+      cv.classList.add('ac-anno-no-toolbar');
+    }
+    if (opts.hideToolbar) hideToolbar();
+
+    // ---------- 贴纸选择面板 ----------
+    function showStickerPanel() {
+      if (stickerPanelEl) return;
+      stickerPanelEl = document.createElement('div');
+      stickerPanelEl.className = 'ac-anno-sticker-panel';
+      const catsEl = document.createElement('div');
+      catsEl.className = 'ac-anno-sticker-cats';
+      const gridEl = document.createElement('div');
+      gridEl.className = 'ac-anno-sticker-grid';
+      let curCat = 0;
+
+      function renderCat(idx) {
+        curCat = idx;
+        catsEl.querySelectorAll('.ac-anno-sticker-cat').forEach((el, i) => {
+          el.classList.toggle('on', i === idx);
+        });
+        gridEl.innerHTML = '';
+        for (const sid of STICKER_CATEGORIES[idx].items) {
+          const item = document.createElement('div');
+          item.className = 'ac-anno-sticker-item';
+          const svgData = STICKER_SVG[sid];
+          if (svgData) {
+            item.innerHTML = svgData;
+            const svgEl = item.querySelector('svg');
+            if (svgEl) {
+              svgEl.style.width = '100%';
+              svgEl.style.height = '100%';
+              svgEl.style.display = 'block';
+            }
+          }
+          item.title = '点击添加贴纸';
+          item.addEventListener('click', () => addSticker(sid));
+          gridEl.appendChild(item);
+        }
+      }
+
+      STICKER_CATEGORIES.forEach((cat, i) => {
+        const catBtn = document.createElement('div');
+        catBtn.className = 'ac-anno-sticker-cat' + (i === 0 ? ' on' : '');
+        catBtn.textContent = cat.name;
+        catBtn.addEventListener('click', () => renderCat(i));
+        catsEl.appendChild(catBtn);
+      });
+      stickerPanelEl.append(catsEl, gridEl);
+      renderCat(0);
+      bar.appendChild(stickerPanelEl);
+    }
+    function hideStickerPanel() {
+      if (stickerPanelEl) {
+        stickerPanelEl.remove();
+        stickerPanelEl = null;
+      }
+    }
+    function addSticker(sid) {
+      if (!img) return;
+      const baseSize = Math.min(cv.width, cv.height) * 0.15;
+      // 胶带类贴纸是横向的，保持原始宽高比 2:1
+      const isTape = sid.startsWith('tape_') || sid === 'underline' || sid === 'rainbow';
+      const w = isTape ? baseSize * 2 : baseSize;
+      const h = isTape ? baseSize * 0.6 : baseSize;
+      const sh = {
+        type: 'sticker',
+        sid,
+        x: cv.width / 2,
+        y: cv.height / 2,
+        w,
+        h,
+        rotation: 0,
+      };
+      commit(sh);
+      selectedIdx = shapes.length - 1;
+      updateSelectionOverlay();
+      // 确保贴纸图片加载完成后重绘
+      const simg = getStickerImage(sid);
+      if (simg && !simg.complete) {
+        simg.onload = () => { redraw(); };
+      }
+    }
+
+    // ---------- 选中覆盖层（移动/缩放/旋转手柄） ----------
+    // 贴纸命中测试：返回命中的贴纸索引，未命中返回 -1
+    function hitTestSticker(px, py) {
+      // 从后往前遍历（上面的贴纸优先命中）
+      for (let i = shapes.length - 1; i >= 0; i--) {
+        const sh = shapes[i];
+        if (sh.type !== 'sticker') continue;
+        // 将点变换到贴纸本地坐标系（逆旋转 + 逆平移）
+        const dx = px - sh.x;
+        const dy = py - sh.y;
+        const cos = Math.cos(-(sh.rotation || 0));
+        const sin = Math.sin(-(sh.rotation || 0));
+        const lx = dx * cos - dy * sin;
+        const ly = dx * sin + dy * cos;
+        const halfW = sh.w / 2;
+        const halfH = sh.h / 2;
+        if (Math.abs(lx) <= halfW && Math.abs(ly) <= halfH) {
+          return i;
+        }
+      }
+      return -1;
+    }
+    // 缩放/旋转手柄的 pointerdown 事件
+    function bindHandleEvents() {
+      if (!selOverlay) return;
+      selOverlay.querySelectorAll('.ac-anno-sel-handle, .ac-anno-sel-rotate').forEach((el) => {
+        el.addEventListener('pointerdown', (e) => {
+          e.stopPropagation();
+          e.preventDefault();
+          if (selectedIdx < 0 || !shapes[selectedIdx]) return;
+          const handle = el.dataset.handle;
+          try { cv.setPointerCapture(e.pointerId); } catch {}
+          dragStart = { x: e.clientX, y: e.clientY };
+          dragSticker = { ...shapes[selectedIdx], handle };
+          dragMode = handle === 'rotate' ? 'rotate' : 'resize';
+        });
+      });
+    }
+    function createSelectionOverlay() {
+      if (selOverlay) return;
+      selOverlay = document.createElement('div');
+      selOverlay.className = 'ac-anno-sel';
+      selOverlay.style.display = 'none';
+      // 四个角缩放手柄
+      ['tl', 'tr', 'bl', 'br'].forEach((pos) => {
+        const h = document.createElement('div');
+        h.className = 'ac-anno-sel-handle ' + pos;
+        h.dataset.handle = pos;
+        selOverlay.appendChild(h);
+      });
+      // 顶部连接线和旋转手柄
+      const line = document.createElement('div');
+      line.className = 'ac-anno-sel-line';
+      selOverlay.appendChild(line);
+      const rot = document.createElement('div');
+      rot.className = 'ac-anno-sel-rotate';
+      rot.textContent = '↻';
+      rot.dataset.handle = 'rotate';
+      selOverlay.appendChild(rot);
+      wrap.appendChild(selOverlay);
+
+      // 绑定手柄事件
+      bindHandleEvents();
+    }
+    function updateSelectionOverlay() {
+      if (selectedIdx < 0 || !shapes[selectedIdx]) {
+        if (selOverlay) selOverlay.style.display = 'none';
+        cv.classList.remove('ac-anno-sticker-cursor');
+        return;
+      }
+      createSelectionOverlay();
+      const sh = shapes[selectedIdx];
+      const k = uiScale();
+      const halfW = (sh.w || 60) / 2;
+      const halfH = (sh.h || 60) / 2;
+      const rect = cv.getBoundingClientRect();
+      // 用屏幕坐标计算覆盖层位置
+      const cx = sh.x / k;
+      const cy = sh.y / k;
+      const wScreen = sh.w / k;
+      const hScreen = sh.h / k;
+
+      selOverlay.style.display = 'block';
+      selOverlay.style.left = (cx - wScreen / 2) + 'px';
+      selOverlay.style.top = (cy - hScreen / 2) + 'px';
+      selOverlay.style.width = wScreen + 'px';
+      selOverlay.style.height = hScreen + 'px';
+      selOverlay.style.transform = `rotate(${sh.rotation || 0}rad)`;
+      selOverlay.style.transformOrigin = 'center center';
+      cv.classList.add('ac-anno-sticker-cursor');
+    }
+    function clearSelection() {
+      selectedIdx = -1;
+      updateSelectionOverlay();
+    }
 
     // ---------- 绘制 ----------
     // 拖拽过程用 rAF 节流；提交/撤销/换图必须同步画完（flush），
@@ -298,6 +628,19 @@
           ctx.fillText(String(sh.n), sh.x, sh.y + r * 0.04);
           break;
         }
+        case 'sticker': {
+          if (!sh.sid) break;
+          const w2 = sh.w || 60;
+          const h2 = sh.h || 60;
+          const simg = getStickerImage(sh.sid);
+          if (!simg || !simg.complete || !simg.naturalWidth) break; // 图片还没加载好就跳过
+          ctx.save();
+          ctx.translate(sh.x, sh.y);
+          if (sh.rotation) ctx.rotate(sh.rotation);
+          ctx.drawImage(simg, -w2 / 2, -h2 / 2, w2, h2);
+          ctx.restore();
+          break;
+        }
       }
       ctx.restore();
     }
@@ -362,12 +705,31 @@
     // ---------- 交互 ----------
     let drawing = false;
     let startPt = null;
+    // 贴纸拖拽状态
+    let dragMode = null; // 'move' | 'resize' | 'rotate' | null
+    let dragStart = null; // { x, y } 起始屏幕坐标
+    let dragSticker = null; // 拖拽开始时贴纸状态快照
 
     cv.addEventListener('pointerdown', (e) => {
       if (e.button !== 0 || !img) return;
       e.preventDefault();
       try { cv.setPointerCapture(e.pointerId); } catch { /* 老版本不支持 */ }
       const p = toImg(e);
+      if (tool === 'sticker') {
+        // 贴纸工具：先做命中测试
+        const hitIdx = hitTestSticker(p.x, p.y);
+        if (hitIdx >= 0) {
+          selectedIdx = hitIdx;
+          dragMode = 'move';
+          dragStart = { x: e.clientX, y: e.clientY };
+          dragSticker = { ...shapes[hitIdx] };
+          updateSelectionOverlay();
+          return;
+        } else {
+          clearSelection();
+        }
+        return;
+      }
       if (tool === 'text') {
         openInput(p);
         return;
@@ -386,6 +748,84 @@
     });
 
     cv.addEventListener('pointermove', (e) => {
+      // 贴纸拖拽
+      if (dragMode && selectedIdx >= 0 && shapes[selectedIdx]) {
+        const k = uiScale();
+        const dx = (e.clientX - dragStart.x) * k;
+        const dy = (e.clientY - dragStart.y) * k;
+        const sh = shapes[selectedIdx];
+
+        if (dragMode === 'move') {
+          sh.x = dragSticker.x + dx;
+          sh.y = dragSticker.y + dy;
+        } else if (dragMode === 'resize') {
+          // 缩放：以对角落为锚点，等比缩放
+          const handle = dragSticker.handle; // 'tl', 'tr', 'bl', 'br'
+          const orig = dragSticker;
+          // 计算角点在贴纸本地坐标系的位置
+          const cos = Math.cos(orig.rotation || 0);
+          const sin = Math.sin(orig.rotation || 0);
+          // 把鼠标位移转换到贴纸的本地坐标系（旋转前）
+          const localDx = dx * cos + dy * sin;
+          const localDy = -dx * sin + dy * cos;
+
+          let newW = orig.w;
+          let newH = orig.h;
+          let anchorX = orig.x; // 锚点（对角落）在世界坐标
+          let anchorY = orig.y;
+
+          // 根据 handle 确定对角落作为锚点
+          const halfW = orig.w / 2;
+          const halfH = orig.h / 2;
+          // 对角落的本地偏移
+          let anchorLocalX = 0, anchorLocalY = 0;
+          let dragLocalX = 0, dragLocalY = 0;
+          if (handle === 'br') { anchorLocalX = -halfW; anchorLocalY = -halfH; dragLocalX = halfW; dragLocalY = halfH; }
+          else if (handle === 'bl') { anchorLocalX = halfW; anchorLocalY = -halfH; dragLocalX = -halfW; dragLocalY = halfH; }
+          else if (handle === 'tr') { anchorLocalX = -halfW; anchorLocalY = halfH; dragLocalX = halfW; dragLocalY = -halfH; }
+          else if (handle === 'tl') { anchorLocalX = halfW; anchorLocalY = halfH; dragLocalX = -halfW; dragLocalY = -halfH; }
+
+          // 锚点世界坐标
+          anchorX = orig.x + anchorLocalX * cos - anchorLocalY * sin;
+          anchorY = orig.y + anchorLocalX * sin + anchorLocalY * cos;
+
+          // 拖拽角的新本地坐标
+          const newDragLocalX = dragLocalX + localDx;
+          const newDragLocalY = dragLocalY + localDy;
+
+          // 等比缩放：保持宽高比
+          const ratio = orig.w / orig.h;
+          let scaleX = Math.abs(newDragLocalX - anchorLocalX) / (orig.w / 2);
+          let scaleY = Math.abs(newDragLocalY - anchorLocalY) / (orig.h / 2);
+          const scale = Math.max(0.1, Math.max(scaleX, scaleY));
+
+          newW = orig.w * scale;
+          newH = orig.h * scale;
+
+          // 新的中心 = 锚点 + 新的半宽高方向偏移（旋转回世界坐标）
+          const newHalfW = newW / 2;
+          const newHalfH = newH / 2;
+          // 中心相对锚点的本地偏移（即 dragLocalX/Y 的对侧方向，取符号）
+          const centerLocalX = anchorLocalX + (dragLocalX > anchorLocalX ? newHalfW : -newHalfW);
+          const centerLocalY = anchorLocalY + (dragLocalY > anchorLocalY ? newHalfH : -newHalfH);
+
+          sh.w = newW;
+          sh.h = newH;
+          sh.x = anchorX + centerLocalX * cos - centerLocalY * sin;
+          sh.y = anchorY + centerLocalX * sin + centerLocalY * cos;
+        } else if (dragMode === 'rotate') {
+          // 旋转：以贴纸中心为原点
+          const angleStart = Math.atan2(dragStart.y - cv.getBoundingClientRect().top - dragSticker.y / uiScale(),
+                                         dragStart.x - cv.getBoundingClientRect().left - dragSticker.x / uiScale());
+          const angleNow = Math.atan2(e.clientY - cv.getBoundingClientRect().top - dragSticker.y / uiScale(),
+                                       e.clientX - cv.getBoundingClientRect().left - dragSticker.x / uiScale());
+          sh.rotation = dragSticker.rotation + (angleNow - angleStart);
+        }
+
+        redraw();
+        updateSelectionOverlay();
+        return;
+      }
       if (!drawing || !draft) return;
       const p = toImg(e);
       if (draft.type === 'pen') {
@@ -402,6 +842,15 @@
     });
 
     const endDraw = (e) => {
+      // 贴纸拖拽结束
+      if (dragMode) {
+        dragMode = null;
+        dragStart = null;
+        dragSticker = null;
+        try { cv.releasePointerCapture(e.pointerId); } catch { /* 未捕获到 */ }
+        if (onChange) onChange();
+        return;
+      }
       if (!drawing || !draft) return;
       drawing = false;
       try { cv.releasePointerCapture(e.pointerId); } catch { /* 未捕获到 */ }
@@ -425,14 +874,18 @@
       if (!shapes.length) return;
       shapes.pop();
       if (shapes.length === 0) seq = 0;
+      if (selectedIdx >= shapes.length) selectedIdx = -1;
       flush();
+      updateSelectionOverlay();
       if (onChange) onChange();
     }
     function clear() {
       if (!shapes.length) return;
       shapes = [];
       seq = 0;
+      selectedIdx = -1;
       flush();
+      updateSelectionOverlay();
       if (onChange) onChange();
     }
 
@@ -473,9 +926,18 @@
         e.preventDefault();
         undo();
       }
+      // 删除选中的贴纸
+      if ((e.key === 'Delete' || e.key === 'Backspace') && selectedIdx >= 0 && tool === 'sticker') {
+        e.preventDefault();
+        shapes.splice(selectedIdx, 1);
+        selectedIdx = -1;
+        flush();
+        updateSelectionOverlay();
+        if (onChange) onChange();
+      }
     };
     window.addEventListener('keydown', onKey, true);
-    const onResize = () => redraw();
+    const onResize = () => { redraw(); updateSelectionOverlay(); };
     window.addEventListener('resize', onResize);
 
     // ---------- 对外 ----------
@@ -502,6 +964,7 @@
           for (const sh of shapes) {
             if (sh.type === 'pen') sh.pts.forEach((p) => { p.x *= sx; p.y *= sy; });
             else if (sh.type === 'number' || sh.type === 'text') { sh.x *= sx; sh.y *= sy; }
+            else if (sh.type === 'sticker') { sh.x *= sx; sh.y *= sy; sh.w *= sx; sh.h *= sy; }
             else { sh.x0 *= sx; sh.y0 *= sy; sh.x1 *= sx; sh.y1 *= sy; }
           }
         }
@@ -535,6 +998,9 @@
       clear,
       hasShapes: () => shapes.length > 0,
       onChange: (cb) => { onChange = cb; },
+      setTool: (id) => setTool(id),
+      showToolbar,
+      hideToolbar,
       destroy() {
         window.removeEventListener('keydown', onKey, true);
         window.removeEventListener('resize', onResize);

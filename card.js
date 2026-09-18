@@ -605,8 +605,14 @@
     /* 划线调色板浮条：贴图片下缘悬浮，不占额外高度（卡片底部中间本就是留白，遮挡最小）。
        壳用 inline-block（同 annotate 的 .ac-anno-wrap），让浮条的 50% 居中贴合图片实际宽度 */
     .ac-share-view { position: relative; display: inline-block; line-height: 0; max-width: 100%; }
+    /* 划线卡现在也走 annotate（贴纸层），画布自带 58vh 上限；这里对齐图片的 62vh，
+       否则同一张卡片会平白缩水一档（实测 799x470 vs 原文 854x502） */
+    .ac-share-view .ac-anno-base { max-height: 62vh; }
     .ac-share-float {
       position: absolute; left: 50%; bottom: 10px; transform: translateX(-50%);
+      /* annotate 模式下 view 是 .ac-anno-stage，里面的 .ac-anno-wrap 带 z-index:1，
+         浮条不抬 z-index 会被标注画布整条盖住（调色板/贴纸按钮全看不见） */
+      z-index: 6;
       display: flex; align-items: center; gap: 7px; padding: 5px 11px; border-radius: 999px;
       background: rgba(255,255,255,.93); border: 1px solid rgba(31,36,48,.14);
       box-shadow: 0 4px 16px rgba(15,18,28,.18); backdrop-filter: blur(8px);
@@ -663,11 +669,20 @@
     mask.className = 'ac-share-mask';
     const box = document.createElement('div');
     box.className = 'ac-share-card-box';
-    // 标注编辑器（箭头 / 矩形 / 马赛克等）：截图与划线分享共用，__acAnnotate 缺失时退化成普通图片
+    // 标注编辑器（箭头 / 矩形 / 马赛克 / 贴纸等）：截图与划线分享共用
+    // 当 onImageClick 存在时（荧光笔划线模式），也启用 annotate 但默认隐藏工具栏，
+    // 贴纸模式通过外部按钮切换，底图更新走 setImage，贴纸作为标注层独立保存
     let anno = null;
     let view;
+    let stickerMode = false; // 荧光笔模式下是否处于贴纸编辑态
     if (opts.annotate !== false && globalThis.__acAnnotate) {
-      anno = globalThis.__acAnnotate.create(root, dataUrl, {});
+      const annoOpts = {};
+      // 有 onImageClick 说明是荧光笔模式，初始隐藏工具栏
+      if (typeof opts.onImageClick === 'function') {
+        annoOpts.hideToolbar = true;
+        annoOpts.tool = 'sticker';
+      }
+      anno = globalThis.__acAnnotate.create(root, dataUrl, annoOpts);
       view = anno.el;
     } else {
       const img = document.createElement('img');
@@ -745,6 +760,14 @@
     if (anno) anno.onChange(autoCopy);
     // 悬浮工具条：色点 / 图标按钮（act.icon 给 SVG 原文）+ 分隔符（act.kind === 'sep'）。
     // act.selected 可以是函数，每次点击后就地重算选中态——这样调色板换色不用重建整个浮层
+    // 荧光笔模式下的点击目标（wrap 容器），贴纸切换时要用
+    let clickTarget = null;
+    if (typeof opts.onImageClick === 'function' && anno) {
+      clickTarget = view.querySelector('.ac-anno-wrap') || view;
+      // 初始：canvas 不拦截点击，穿透到 wrap（荧光笔模式）
+      const layers = view.querySelectorAll('.ac-anno-layer, .ac-anno-sel');
+      layers.forEach((l) => { l.style.pointerEvents = 'none'; });
+    }
     if (fActs.length) {
       const fb = document.createElement('div');
       fb.className = 'ac-share-float';
@@ -774,7 +797,29 @@
       for (const [b, act] of items) {
         b.addEventListener('click', async (e) => {
           e.stopPropagation();
-          try { await act.onClick(updateImg); } catch { /* 失败保持原状 */ }
+          try {
+            if (act.kind === 'sticker') {
+              // 贴纸模式切换：荧光笔模式下进入/退出贴纸编辑
+              stickerMode = !stickerMode;
+              if (stickerMode) {
+                anno?.showToolbar?.();
+                anno?.setTool?.('sticker');
+                // 恢复 canvas 交互
+                const layers = view.querySelectorAll('.ac-anno-layer, .ac-anno-sel');
+                layers.forEach((l) => { l.style.pointerEvents = ''; });
+                if (clickTarget) clickTarget.style.cursor = '';
+              } else {
+                anno?.hideToolbar?.();
+                // 禁用 canvas 交互，让点击穿透
+                const layers = view.querySelectorAll('.ac-anno-layer, .ac-anno-sel');
+                layers.forEach((l) => { l.style.pointerEvents = 'none'; });
+                if (clickTarget) clickTarget.style.cursor = 'crosshair';
+              }
+              if (act.onClick) await act.onClick(updateImg, stickerMode);
+            } else {
+              await act.onClick(updateImg);
+            }
+          } catch { /* 失败保持原状 */ }
           sync();
         });
       }
@@ -783,10 +828,12 @@
     }
     // 点卡片切换划线高亮：仅当调用方提供 onImageClick（分享卡走此交互，此时标注层已关闭）。
     // 传回的是相对图片的分数坐标（0~1），由调用方换算到卡片像素做词块命中；updateImg 供其重绘并自动回写剪贴板
-    if (typeof opts.onImageClick === 'function' && view.addEventListener) {
-      view.style.cursor = 'crosshair';
-      view.addEventListener('click', (e) => {
-        const rect = view.getBoundingClientRect();
+    if (typeof opts.onImageClick === 'function') {
+      const target = clickTarget || view;
+      target.style.cursor = 'crosshair';
+      target.addEventListener('click', (e) => {
+        if (stickerMode) return; // 贴纸模式下不触发高亮
+        const rect = target.getBoundingClientRect();
         if (!rect.width || !rect.height) return;
         opts.onImageClick((e.clientX - rect.left) / rect.width, (e.clientY - rect.top) / rect.height, { updateImg });
       });

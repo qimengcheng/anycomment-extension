@@ -418,10 +418,12 @@
         }
         return acts;
       };
-      // 悬浮工具条：7 个色点 + 分隔线 + 装饰 / 重置（图标按钮）。浮在卡片下缘、不占额外高度。
+      // 悬浮工具条：7 个色点 + 分隔线 + 贴纸 / 装饰 / 重置（图标按钮）。浮在卡片下缘、不占额外高度。
       // selected 传函数：点击后就地刷新选中态，不重建浮层（换色不再闪一下）
+      const ICON_STICKER = '<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M2 3.5h7.5L14 8v5a1.5 1.5 0 01-1.5 1.5h-9A1.5 1.5 0 012 13v-9.5z"/><path d="M9.5 3.5V8H14" fill="none"/><path d="M4.5 6.5l1 1.5 1.5-1-1 1.5 1 .8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" fill="none"/></svg>';
       const ICON_DOODLE = '<svg viewBox="0 0 16 16" width="15" height="15" fill="currentColor"><path d="M8 1.7l1.7 4.6L14.3 8l-4.6 1.7L8 14.3 6.3 9.7 1.7 8l4.6-1.7z"/></svg>';
       const ICON_RESET = '<svg viewBox="0 0 16 16" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3.4 6.7A5 5 0 1 1 8 13"/><path d="M3.4 2.7v4h4"/></svg>';
+      let stickerOn = false;
       const buildFloatActions = () => {
         if (!useMarker) return [];
         // 点色块 = 把当前所有已高亮词重涂成选中色，并作为之后点词的新色
@@ -431,6 +433,11 @@
           onClick: (updateImg) => { activeColor = c.id; for (const k in hl) hl[k] = c.id; updateImg(render()); },
         }));
         acts.push({ kind: 'sep' });
+        acts.push({
+          kind: 'sticker', icon: ICON_STICKER, label: '贴纸（点击添加手账贴纸）',
+          selected: () => stickerOn,
+          onClick: (updateImg, isOn) => { stickerOn = !!isOn; },
+        });
         acts.push({
           kind: 'icon', icon: ICON_DOODLE, label: '手绘装饰（点击开关）',
           selected: () => doodle,
@@ -450,7 +457,7 @@
       } : undefined;
       const open = () => card.showPreview(shadow, render(), {
         alt: '划线分享卡片预览', actions: buildActions(), floatActions: buildFloatActions(),
-        annotate: !useMarker, onImageClick,
+        annotate: true, onImageClick,
       });
       open();
       recordQuoteShare(q); // 记录划线（登录态），并即时给页面加虚线
