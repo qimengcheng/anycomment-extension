@@ -2753,8 +2753,9 @@
   const MARKER_COLORS = {
     yellow: '#fff2a8', orange: '#ffc79b', pink: '#ffb3d1',
     green: '#b6f0a6', blue: '#a6d8ff', purple: '#d7b3ff',
+    crimson: '#dc3a5c',
   };
-  const MARKER_RAINBOW = ['#fff2a8', '#ffc79b', '#ffb3d1', '#b6f0a6', '#a6d8ff', '#d7b3ff'];
+  const MARKER_RAINBOW = ['#fff2a8', '#ffc79b', '#ffb3d1', '#b6f0a6', '#a6d8ff', '#d7b3ff', '#dc3a5c'];
   const MARKER_PALETTE = [
     { id: 'yellow', name: '黄', css: MARKER_COLORS.yellow },
     { id: 'orange', name: '橙', css: MARKER_COLORS.orange },
@@ -2762,13 +2763,14 @@
     { id: 'green', name: '绿', css: MARKER_COLORS.green },
     { id: 'blue', name: '蓝', css: MARKER_COLORS.blue },
     { id: 'purple', name: '紫', css: MARKER_COLORS.purple },
+    { id: 'crimson', name: '洋红', css: MARKER_COLORS.crimson },
     { id: 'rainbow', name: '彩虹', css: `linear-gradient(90deg, ${MARKER_RAINBOW.join(', ')})` },
   ];
-  // 荧光笔「干笔刷」：外轮廓是干净的方头斜切条（长边取直，不再抖成波浪狗牙），
-  // 笔刷感来自**内部顺向缺色横纹**——沿厚度把笔带切成若干条水平刷痕、条间留细缝，
-  // 像马克笔/画笔画过去墨没吃满的丝状留白；逐条单独 fill、互不重叠（同 alpha 下重叠会叠深）。
-  // 起笔端向左出头（lead），两端斜切量 headLean/tailLean 轻微不等（多为顺斜、可略反向）。
-  // **正片叠底(multiply)**：白底变彩色、深色字透出；由调用方在文字之后绘制（"划在字上"）。
+  // 荧光笔「整条干笔刷」（v1.98.0 按用户参考图重做）：不再有中间实心段——整条笔带由
+  // 一摞首尾贯通的水平笔毛铺满，粗细随机错落；笔毛上下沿同波形贴合（无缝隙，
+  // 个别位置刻意留细缝=缺色丝），左右缘随斜切骨架线性倾斜；两端按毛参差收锋——
+  // 每根毛的起止各自随机咬进/出头（偶发深缺口），条外另撒几根短须毛磨出毛边。
+  // 全部子路径合进**同一条 path 一次 fill**（multiply 下单次填充无叠色接缝）。
   // x/y 为词块左上角，fs 为字号，colorId 为调色板 id（缺省/未知回落黄色；'rainbow'=横向彩虹渐变）。
   function paintMarker(ctx, x, y, w, fs, rng, colorId) {
     if (!(w > 0)) return;
@@ -2782,68 +2784,78 @@
       MARKER_RAINBOW.forEach((c, i) => fill.addColorStop(i / (MARKER_RAINBOW.length - 1), c));
     } else if (!fill) fill = MARKER_COLORS.yellow;
     const lead = Math.max(4, thick * 0.35); // 起笔端向左出头
-    // 顶边相对底边在左/右端各自的水平错位（多为顺斜，允许略反向）→ 梯形斜切骨架，长边取直。
-    const lean = () => skew * (rng() * 1.4 - 0.2); // ≈ [-0.2·skew, 1.2·skew]
+    const lean = () => skew * (rng() * 1.4 - 0.2); // 端点斜切量，多为顺斜、可略反向
     const headLean = lean();
     const tailLean = lean();
-    // 以底边为 f=0、顶边为 f=1 的竖直参数，左右缘 x 随 f 线性插值（直边，不抖）。
+    // 以底边为 f=0、顶边为 f=1 的竖直参数，左右缘 x 随 f 线性插值（斜切骨架）。
     const leftX = (f) => x - lead + headLean * f;
     const rightX = (f) => x + w + tailLean * f;
     const yAt = (f) => bot - f * thick;
-    const fillQuad = (xa, xb, fa, fb) => { // 由两条竖直边(x 恒定)围一个直边梯形并单独 fill
-      ctx.beginPath();
-      ctx.moveTo(xa, yAt(fa));
-      ctx.lineTo(xb, yAt(fa));
-      ctx.lineTo(xb, yAt(fb));
-      ctx.lineTo(xa, yAt(fb));
+    const n = Math.max(6, Math.min(14, Math.round(thick / 1.6))); // 笔毛行数：越粗毛越多
+    const rowF = 1 / n;
+    const amp = Math.min(3, thick * 0.03); // 沿程起伏要轻微（主体是实心，只微微蛇行）
+    const freq = 0.035;
+    // 确定性沿程噪声：同一 x、同一 phase 必得同一偏移（相邻毛共享边界才不会抖出缝隙）
+    const wob = (xx, ph) => Math.sin(xx * freq + ph) * amp + Math.sin(xx * 0.53 + ph * 7.1) * amp * 0.25;
+    // 一条笔毛：xa→xb、f0→f1，上下沿按同一 phase 起伏（相邻毛共享边界波形，不露缝）
+    const stroke = (xa, xb, f0, f1, ph) => {
+      if (!(xb - xa > 0.5) || !(f1 - f0 > 0.001)) return;
+      const steps = Math.max(3, Math.round((xb - xa) / (thick * 0.8)));
+      const xAt = (s) => xa + ((xb - xa) * s) / steps;
+      ctx.moveTo(xAt(0), yAt(f0) + wob(xAt(0), ph));
+      for (let s = 1; s <= steps; s++) { const xx = xAt(s); ctx.lineTo(xx, yAt(f0) + wob(xx, ph)); }
+      for (let s = steps; s >= 0; s--) { const xx = xAt(s); ctx.lineTo(xx, yAt(f1) + wob(xx, ph + 0.55)); }
       ctx.closePath();
-      ctx.fill();
     };
-    const bristle = Math.min(w * 0.16, thick * 1.0); // 两端各约这么长的刷毛咬入区（再收短→实心更长）
-    const fHead = leftX(0) + bristle; // 实心段左界（起笔侧刷毛到此为止）
-    const fTail = rightX(1) - bristle; // 实心段右界（收笔侧刷毛从此起）
+    // 1) 竖直按随机权重切 n 条笔毛带（粗细错落），少数边界拉开成缺色细缝
+    const ws = [];
+    let sum = 0;
+    for (let i = 0; i < n; i++) { const v = 0.7 + rng() * 0.6; ws.push(v); sum += v; }
+    const gaps = new Set();
+    for (let i = 1; i < n; i++) if (rng() < 0.04) gaps.add(i); // 缺色细缝很稀有，主体保持连贯
+    const gapF = rowF * 0.06;
+    const bs = [0];
+    for (let i = 1; i <= n; i++) bs.push(Math.min(1, bs[i - 1] + (ws[i - 1] / sum) * (1 - gaps.size * gapF * 2)));
     ctx.save();
     ctx.globalCompositeOperation = 'multiply';
-    ctx.globalAlpha = 0.8; // 略降不透明度，笔带更通透不发闷
+    ctx.globalAlpha = 0.85;
     ctx.fillStyle = fill;
-    // 1) 中间实心：不留缝、不断色，把笔带主体填满。
-    fillQuad(fHead, fTail, 0, 1);
-    // 2) 两端刷毛：每根毛画成**中线随 x 轻微起伏、粗细随机偏细、端头参差**的细线（真实干笔触），
-    //    只在两端出现、随机长短咬进实心段；线间留白=缺色。逐根单独 fill、上下沿各自取点不重叠叠深。
-    const nRows = Math.max(4, Math.min(12, Math.round(thick / 1.9))); // 毛根数（随粗细增减）
-    const rowF = 1 / nRows;
-    const amp = thick * 0.05; // 刷毛中线波浪幅度（小，避免相邻毛交叉叠深）
-    const freq = 0.07; // 弯曲频率（沿 x）
-    // 一根水平细毛：xa→xb，中线 yc，半厚 halfTh，phase 定波形；上下沿各自抖动→粗细沿线微变。
-    const bristleLine = (xa, xb, yc, halfTh, phase) => {
-      const span = xb - xa;
-      if (span <= 0) return;
-      const steps = Math.max(3, Math.round(span / (thick * 0.6)));
-      ctx.beginPath();
-      for (let s = 0; s <= steps; s++) { // 上沿：左→右
-        const xx = xa + (span * s) / steps;
-        const off = Math.sin(xx * freq + phase) * amp + (rng() - 0.5) * amp * 0.5;
-        ctx.lineTo(xx, yc + off - halfTh);
+    ctx.beginPath();
+    // 两端整体收尖基准（画成略凹的弧：中间比两端缩进多），逐毛在此基准上小抖动
+    const headBulge = thick * (0.12 + rng() * 0.22);
+    const tailBulge = thick * (0.12 + rng() * 0.22);
+    for (let i = 0; i < n; i++) {
+      let f0 = bs[i], f1 = bs[i + 1];
+      if (gaps.has(i)) f0 += gapF; // 与上一根毛之间留细缝
+      if (gaps.has(i + 1)) f1 -= gapF; // 与下一根毛之间留细缝
+      const ph = rng() * Math.PI * 2;
+      const mid = (f0 + f1) / 2; // 本毛在笔带中的竖直位置 → 决定基准收尖量
+      const arc = (bulge) => bulge * (1 - Math.pow(2 * mid - 1, 2)); // 两端≈0、正中最大
+      const notch = () => (rng() < 0.1 ? rowF * thick * (1 + rng() * 2.5) : 0); // 偶发深缺口（单根毛被啃一截）
+      const jit = () => rowF * thick * rng() * 0.9; // 常态逐毛小参差
+      const xa = leftX(f0) - lead * 0.3 * rng() + arc(headBulge) + jit() + notch();
+      const xb = rightX(f1) - arc(tailBulge) - jit() - notch();
+      if (rng() < 0.04) { // 约 4% 的毛中段断墨，拆成两段（细缝窄）
+        const cut = xa + (xb - xa) * (0.3 + rng() * 0.4);
+        const gw = thick * (0.03 + rng() * 0.06);
+        stroke(xa, cut, f0, f1, ph);
+        stroke(cut + gw, xb, f0, f1, ph);
+      } else {
+        stroke(xa, xb, f0, f1, ph);
       }
-      for (let s = steps; s >= 0; s--) { // 下沿：右→左
-        const xx = xa + (span * s) / steps;
-        const off = Math.sin(xx * freq + phase) * amp + (rng() - 0.5) * amp * 0.5;
-        ctx.lineTo(xx, yc + off + halfTh);
-      }
-      ctx.closePath();
-      ctx.fill();
-    };
-    for (let r = 0; r < nRows; r++) {
-      const yc = yAt(r * rowF + rowF * 0.5); // 本根毛的中线（竖直分布）
-      const halfTh = rowF * thick * (0.16 + rng() * 0.18); // 粗细随机、偏细
-      const phase = rng() * Math.PI * 2;
-      const dHead = Math.min(w * 0.5, rng() * w); // 起笔侧咬进长度，≤半个字宽
-      const dTail = Math.min(w * 0.5, rng() * w); // 收笔侧咬进长度，≤半个字宽
-      const hx = leftX(0) + (rng() - 0.5) * thick * 0.15; // 起笔端头参差
-      const tx = rightX(1) + (rng() - 0.5) * thick * 0.15; // 收笔端头参差
-      bristleLine(hx, fHead + dHead, yc, halfTh, phase); // 起笔侧细毛，咬进实心段
-      bristleLine(fTail - dTail, tx, yc, halfTh, phase + 1.9); // 收笔侧细毛
     }
+    // 2) 条外须毛：上下缘外 1~2px 撒几根细短毛，磨出参差毛边
+    for (let k = 0; k < 6; k++) {
+      const ph = rng() * Math.PI * 2;
+      const up = k % 2 === 0;
+      const yc = (up ? top : bot) + (up ? -1 : 1) * (0.5 + rng() * 2);
+      const half = Math.max(0.4, thick * 0.028);
+      const xx = x + w * rng() * 0.86;
+      const len = thick * (0.35 + rng() * 1.3);
+      const x0 = up ? Math.max(x - lead, xx - len) : Math.min(x + w + skew, xx);
+      stroke(x0, x0 + len, (yc + half - bot) / -thick, (yc - half - bot) / -thick, ph);
+    }
+    ctx.fill();
     ctx.restore();
   }
   // 四角星光 ✦：中心收腰的凹边四角星，比直线/箭头更柔和耐看。r=外接半径，color/alpha 控制浓淡。
