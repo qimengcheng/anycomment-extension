@@ -39,6 +39,15 @@
     if (changes.card_glass_alpha) glassAlpha = typeof changes.card_glass_alpha.newValue === 'number' ? changes.card_glass_alpha.newValue : 55;
     if (changes.card_marker) markerOn = changes.card_marker.newValue !== false;
     if (changes.card_doodle) doodleOn = changes.card_doodle.newValue !== false;
+    // 隐藏名单与图标位置可能在别的标签页（或别的站点）里被改过，同步到当前页面
+    if (changes.ac_hidden_sites) {
+      fabHiddenSite = hiddenMatch(readHiddenCache(changes.ac_hidden_sites.newValue).sites, siteKey);
+      applyFabVisibility();
+    }
+    if (changes.ac_fab_pos && !fabDragging) {
+      fabPos = readPos(changes.ac_fab_pos.newValue, siteKey);
+      applyFabPos();
+    }
   });
 
   // 截图时临时隐藏扩展自身 UI：capture.js 与本脚本同隔离世界，直接走全局钩子。
@@ -55,7 +64,20 @@
   // URL 标记 #ac_c=<commentId>：从分享链接跳入时自动展开侧边栏并定位到该评论
   const shareFocusId = getUrlParam('ac_c');
 
-  chrome.storage.local.get({ enabled: true }, (c) => {
+  // ---- 悬浮图标：拖动位置（按站点记）、右键菜单、「不显示图标的网站」----
+  const FAB_SIZE = 42;         // 与 CSS 里 .ac-fab 的宽高保持一致
+  const FAB_MARGIN = 8;        // 贴边留白
+  const FAB_POS_MAX = 100;     // 位置记录最多保留 100 个站点，超了淘汰最久没动的，避免无限膨胀
+  const HIDDEN_TTL = 60_000;   // 隐藏名单本地缓存 60s（与服务端 memo 同口径），期内不再重复请求
+  const siteKey = location.host.toLowerCase();
+  let fabPos = null;           // 本站的自定义位置 { l, t }；null = 默认（贴右边距、垂直居中）
+  let fabCur = null;           // 图标当前实际坐标（视口坐标），由 JS 记账，不回头读布局
+  let fabHiddenTab = false;    // 右键「本次隐藏」：只作用于当前页面，刷新即恢复，不落存储
+  let fabHiddenSite = false;   // 命中服务端「不显示图标的网站」
+  let fabMenu = null;          // 右键菜单节点
+  let suppressFabClick = false; // 拖动收尾那一下 click 要吃掉，不能当成「打开侧栏」
+
+  chrome.storage.local.get({ enabled: true, ac_hidden_sites: null, ac_fab_pos: null }, (c) => {
     if (!serverOrigin) return;
     const isSelf = location.origin === serverOrigin;
     // 自身页面（manage / 直接打开的widget）只做消息中转，不注入评论侧栏
@@ -65,6 +87,9 @@
     }
     if (!c.enabled) return;
     if (!/^https?:$/i.test(location.protocol)) return;
+    // 先用本地缓存的名单和位置判定，命中隐藏就不必等接口返回，避免图标闪一下再消失
+    fabHiddenSite = hiddenMatch(readHiddenCache(c.ac_hidden_sites).sites, siteKey);
+    fabPos = readPos(c.ac_fab_pos, siteKey);
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', mount, { once: true });
     } else {
@@ -85,6 +110,267 @@
     const re = new RegExp(`[#&]${name}=([^&]+)`);
     const m = location.href.match(re);
     return m ? decodeURIComponent(m[1]) : '';
+  }
+
+  /* ------------- 悬浮图标：位置 / 拖动 / 右键菜单 / 不显示图标的网站 ------------- */
+
+  /** 「不显示图标的网站」本地缓存：{ sites: string[], ts: number } */
+  function readHiddenCache(raw) {
+    if (!raw || typeof raw !== 'object' || !Array.isArray(raw.sites)) return { sites: [], ts: 0 };
+    const sites = raw.sites
+      .map((s) => (typeof s === 'string' ? s.trim().toLowerCase() : ''))
+      .filter(Boolean);
+    return { sites, ts: typeof raw.ts === 'number' ? raw.ts : 0 };
+  }
+
+  /** 命中判定：精确相等或子域名（存 example.com 时 www.example.com / blog.example.com 都命中），与自动打开名单同口径 */
+  function hiddenMatch(sites, host) {
+    const h = String(host || '').toLowerCase();
+    if (!h) return false;
+    return (sites || []).some((s) => h === s || h.endsWith('.' + s));
+  }
+
+  /** 读取某个站点的位置记录；没有或字段非法 → null（表示用默认位置） */
+  function readPos(map, key) {
+    const v = map && typeof map === 'object' ? map[key] : null;
+    if (!v || typeof v.l !== 'number' || typeof v.t !== 'number') return null;
+    return { l: v.l, t: v.t };
+  }
+
+  /** 把坐标夹回视口内（窗口缩小后图标不至于被推出屏幕外） */
+  function clampPos(p) {
+    const maxL = Math.max(FAB_MARGIN, window.innerWidth - FAB_MARGIN - FAB_SIZE);
+    const maxT = Math.max(FAB_MARGIN, window.innerHeight - FAB_MARGIN - FAB_SIZE);
+    return {
+      l: Math.min(Math.max(FAB_MARGIN, Math.round(p.l)), maxL),
+      t: Math.min(Math.max(FAB_MARGIN, Math.round(p.t)), maxT),
+    };
+  }
+
+  /**
+   * 默认位置：贴右边距、垂直居中。
+   * 原实现把 `top:50%` 交给了一个 0 高度的宿主（position:fixed + width/height:0），
+   * 百分比按 0 解析，再叠 translateY(-50%) 就把图标顶到视口上沿、只剩下半截露在外面。
+   * 改成显式坐标，默认位置才是原本想要的效果。
+   */
+  function fabDefaultPos() {
+    return {
+      l: Math.max(FAB_MARGIN, window.innerWidth - FAB_MARGIN - FAB_SIZE),
+      t: Math.max(FAB_MARGIN, Math.round(window.innerHeight / 2 - FAB_SIZE / 2)),
+    };
+  }
+
+  /** 落位：侧栏展开且图标会被盖住时左移一个侧栏宽度（本来就在左边的图标不动） */
+  function applyFabPos() {
+    if (!fab) return;
+    const base = clampPos(fabPos || fabDefaultPos());
+    let left = base.l;
+    if (opened) {
+      const panelW = Math.min(400, Math.round(window.innerWidth * 0.92));
+      if (base.l + FAB_SIZE > window.innerWidth - panelW) left = Math.max(FAB_MARGIN, base.l - panelW - 12);
+    }
+    fabCur = { l: left, t: base.t };
+    fab.style.left = left + 'px';
+    fab.style.top = base.t + 'px';
+  }
+
+  /** 隐藏图标 = 「本次隐藏」或命中服务端名单；只藏图标，选中文字的评论/分享入口与页面划线标记照旧 */
+  function applyFabVisibility() {
+    if (!fab) return;
+    const hide = fabHiddenTab || fabHiddenSite;
+    fab.style.display = hide ? 'none' : '';
+    if (hide) closeFabMenu();
+  }
+
+  /** 记住本站的图标位置（每个站点各记一份） */
+  function saveFabPos(p) {
+    chrome.storage.local.get({ ac_fab_pos: null }, (r) => {
+      const map = (r && r.ac_fab_pos && typeof r.ac_fab_pos === 'object') ? { ...r.ac_fab_pos } : {};
+      map[siteKey] = { l: p.l, t: p.t, at: Date.now() };
+      const keys = Object.keys(map);
+      if (keys.length > FAB_POS_MAX) {
+        keys.sort((a, b) => ((map[a] && map[a].at) || 0) - ((map[b] && map[b].at) || 0));
+        for (const k of keys.slice(0, keys.length - FAB_POS_MAX)) delete map[k];
+      }
+      chrome.storage.local.set({ ac_fab_pos: map });
+    });
+  }
+
+  /** 清掉本站的位置记录，回到默认位置 */
+  function resetFabPos() {
+    chrome.storage.local.get({ ac_fab_pos: null }, (r) => {
+      const map = (r && r.ac_fab_pos && typeof r.ac_fab_pos === 'object') ? { ...r.ac_fab_pos } : {};
+      delete map[siteKey];
+      chrome.storage.local.set({ ac_fab_pos: map });
+    });
+    fabPos = null;
+    applyFabPos();
+  }
+
+  // ---- 拖动：指针事件 + 指针捕获，拖动中关掉过渡保证跟手 ----
+  let fabDragging = false;
+  let fabDragMoved = false;
+  let fabDragStart = null; // { x, y, l, t } 按下瞬间的鼠标位置与图标左上角
+  let fabDragLast = null;  // 拖动过程中最后一次算出的落点
+
+  function onFabPointerDown(e) {
+    if (e.button !== 0) return; // 右键留给 contextmenu
+    const r = fab.getBoundingClientRect();
+    const cur = fabCur || { l: r.left, t: r.top };
+    fabDragStart = { x: e.clientX, y: e.clientY, l: cur.l, t: cur.t };
+    fabDragLast = null;
+    fabDragMoved = false;
+    fabDragging = true;
+    try { fab.setPointerCapture(e.pointerId); } catch { /* 不支持指针捕获则退化为普通拖动 */ }
+    if (e.cancelable) e.preventDefault(); // 抑制原生拖拽与文本选中
+  }
+
+  function onFabPointerMove(e) {
+    if (!fabDragging || !fabDragStart) return;
+    const dx = e.clientX - fabDragStart.x;
+    const dy = e.clientY - fabDragStart.y;
+    if (!fabDragMoved) {
+      if (Math.abs(dx) < 3 && Math.abs(dy) < 3) return; // 3px 以内仍算点击，不算拖动
+      fabDragMoved = true;
+      fab.classList.add('ac-drag');
+      closeFabMenu();
+    }
+    const p = clampPos({ l: fabDragStart.l + dx, t: fabDragStart.t + dy });
+    fabCur = p;
+    fabDragLast = p;
+    fab.style.left = p.l + 'px';
+    fab.style.top = p.t + 'px';
+  }
+
+  function onFabPointerUp(e) {
+    if (!fabDragging) return;
+    fabDragging = false;
+    try { fab.releasePointerCapture(e.pointerId); } catch { /* ignore */ }
+    if (!fabDragMoved) return; // 没真正移动 → 交给 click 去打开侧栏
+    suppressFabClick = true;
+    fab.classList.remove('ac-drag');
+    // 用拖动过程中记下的落点，不回头读 getBoundingClientRect：
+    // 过渡刚恢复那一帧读回的是动画中间值，会把位置记错
+    fabPos = clampPos(fabDragLast || fabCur || fabDefaultPos());
+    fabCur = fabPos;
+    fabDragLast = null;
+    fab.style.left = fabPos.l + 'px';
+    fab.style.top = fabPos.t + 'px';
+    saveFabPos(fabPos);
+  }
+
+  // ---- 右键菜单（自绘，不用浏览器原生菜单）----
+  function onFabContextMenu(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    openFabMenu(e.clientX, e.clientY);
+  }
+
+  function openFabMenu(x, y) {
+    closeFabMenu();
+    fabMenu = document.createElement('div');
+    fabMenu.className = 'ac-fab-menu';
+    const items = [
+      { act: 'once', label: '本次隐藏' },
+      { act: 'site', label: '本网站都隐藏' },
+    ];
+    // 只有拖过图标才给「恢复默认位置」，没拖过不必占菜单
+    if (fabPos) items.push({ act: 'reset', label: '恢复默认位置', sep: true });
+    for (const it of items) {
+      if (it.sep) {
+        const hr = document.createElement('div');
+        hr.className = 'ac-menu-sep';
+        fabMenu.appendChild(hr);
+      }
+      const btn = document.createElement('button');
+      btn.className = 'ac-menu-item';
+      btn.dataset.act = it.act;
+      btn.textContent = it.label;
+      fabMenu.appendChild(btn);
+    }
+    fabMenu.addEventListener('click', onFabMenuClick);
+    shadow.appendChild(fabMenu);
+    // 先量出尺寸再落位：贴着鼠标弹出，越界就贴边
+    const r = fabMenu.getBoundingClientRect();
+    fabMenu.style.left = Math.min(Math.max(4, x), Math.max(4, window.innerWidth - r.width - 4)) + 'px';
+    fabMenu.style.top = Math.min(Math.max(4, y), Math.max(4, window.innerHeight - r.height - 4)) + 'px';
+    fabMenu.style.visibility = 'visible';
+  }
+
+  function onFabMenuClick(e) {
+    const btn = e.target && e.target.closest ? e.target.closest('[data-act]') : null;
+    if (!btn) return;
+    const act = btn.dataset.act;
+    closeFabMenu();
+    if (act === 'once') hideFabThisPage();
+    else if (act === 'site') hideFabOnThisSite();
+    else if (act === 'reset') { resetFabPos(); showExtToast('图标位置已恢复默认'); }
+  }
+
+  function closeFabMenu() {
+    if (!fabMenu) return;
+    fabMenu.remove();
+    fabMenu = null;
+  }
+
+  /** 本次隐藏：只影响当前页面，刷新即恢复，不写任何存储 */
+  function hideFabThisPage() {
+    fabHiddenTab = true;
+    applyFabVisibility();
+    showExtToast('已隐藏图标（刷新后恢复）');
+  }
+
+  /** 本网站都隐藏：写进服务端名单，并在本地缓存里同步；www. 前缀去掉，让子域名一起命中 */
+  function hideFabOnThisSite() {
+    const domain = siteKey.replace(/^www\./, '');
+    chrome.storage.local.get({ ac_token: '' }, (r) => {
+      if (!r.ac_token) {
+        showExtToast('请先在 AnyComment 评论区登录，再设置不显示图标的网站');
+        return;
+      }
+      fetch(SERVER + '/api/me/hidden-sites', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + r.ac_token },
+        body: JSON.stringify({ site_domain: domain }),
+      })
+        .then((res) => res.json()
+          .then((d) => ({ ok: res.ok, status: res.status, data: d }))
+          .catch(() => ({ ok: res.ok, status: res.status, data: null })))
+        .then(({ ok, status, data }) => {
+          // 409 = 本来就在名单里，用户意图已经达成，按成功处理
+          if (!ok && status !== 409) throw new Error((data && data.error) || '设置失败');
+          const saved = (data && data.site_domain) || domain;
+          chrome.storage.local.get({ ac_hidden_sites: null }, (s) => {
+            const cache = readHiddenCache(s.ac_hidden_sites);
+            if (!cache.sites.includes(saved)) cache.sites.unshift(saved);
+            chrome.storage.local.set({ ac_hidden_sites: { sites: cache.sites, ts: Date.now() } });
+          });
+          fabHiddenSite = hiddenMatch([saved], siteKey);
+          applyFabVisibility();
+          showExtToast('已隐藏「' + saved + '」的图标，可在个人中心恢复');
+        })
+        .catch((err) => { showExtToast((err && err.message) || '设置失败'); });
+    });
+  }
+
+  /** 后台刷新隐藏名单：未登录、或 60s 内刚同步过就跳过，避免每个页面都多一次请求 */
+  function refreshHiddenSites() {
+    chrome.storage.local.get({ ac_token: '', ac_hidden_sites: null }, (r) => {
+      if (!r.ac_token) return;
+      if (Date.now() - readHiddenCache(r.ac_hidden_sites).ts < HIDDEN_TTL) return;
+      fetch(SERVER + '/api/me/hidden-sites', { headers: { 'Authorization': 'Bearer ' + r.ac_token } })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((d) => {
+          if (!d || !Array.isArray(d.sites)) return;
+          const sites = d.sites
+            .map((s) => (s && s.site_domain ? String(s.site_domain).trim().toLowerCase() : ''))
+            .filter(Boolean);
+          chrome.storage.local.set({ ac_hidden_sites: { sites, ts: Date.now() } });
+          fabHiddenSite = hiddenMatch(sites, siteKey);
+          applyFabVisibility();
+        })
+        .catch(() => { /* 名单拉不到就按「不隐藏」处理，静默降级 */ });
+    });
   }
 
   function mount() {
@@ -116,10 +402,36 @@
     quoteBtn.style.display = 'none';
 
     shadow.append(style, fab, panel, quoteBtn);
+    // 先定好位与可见性再入 DOM，避免图标先从左上角跳一下、或先闪出来再被隐藏
+    applyFabPos();
+    applyFabVisibility();
     document.documentElement.appendChild(host);
     badge = fab.querySelector('.ac-badge');
 
-    fab.addEventListener('click', toggle);
+    fab.addEventListener('click', () => {
+      if (suppressFabClick) { suppressFabClick = false; return; } // 拖动收尾那一下不算打开侧栏
+      toggle();
+    });
+    fab.addEventListener('pointerdown', onFabPointerDown);
+    fab.addEventListener('pointermove', onFabPointerMove);
+    fab.addEventListener('pointerup', onFabPointerUp);
+    fab.addEventListener('pointercancel', onFabPointerUp);
+    fab.addEventListener('contextmenu', onFabContextMenu);
+    // 首帧过去后再开过渡：否则初始位置会被当成一次位移动画播出来
+    requestAnimationFrame(() => { if (fab) fab.classList.add('ac-anim'); });
+    window.addEventListener('resize', () => {
+      if (fabDragging) return;
+      applyFabPos();
+      closeFabMenu();
+    });
+    window.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeFabMenu(); });
+    // 点菜单以外的地方收起菜单（捕获阶段，页面 stopPropagation 也拦不住）
+    document.addEventListener('mousedown', (e) => {
+      if (!fabMenu) return;
+      const path = e.composedPath ? e.composedPath() : [];
+      if (path.includes(fabMenu) || path.includes(fab)) return;
+      closeFabMenu();
+    }, true);
     quoteBtn.addEventListener('click', (e) => {
       const act = e.target && e.target.closest ? e.target.closest('[data-act]') : null;
       if (!act) return;
@@ -137,8 +449,10 @@
     hookHistory();
     refreshBadge();
 
-    // 检查是否需要自动打开侧边栏（用户设置的网站）
-    checkAutoOpen();
+    // 检查是否需要自动打开侧边栏（用户设置的网站）；站点在「不显示图标的网站」名单里时不再自动展开
+    if (!fabHiddenSite) checkAutoOpen();
+    // 名单可能已过期：后台拉一次最新的（未登录或 60s 内刚同步过则跳过）
+    refreshHiddenSites();
     // 拉取本页被划线分享过的文字，标蓝色虚线
     refreshShareMarks();
 
@@ -169,6 +483,7 @@
     opened = !opened;
     panel.classList.toggle('open', opened);
     fab.classList.toggle('active', opened);
+    applyFabPos(); // 侧栏展开时会盖住右下角，图标要让开
     if (opened) {
       // 兜底：如果空闲回调还没执行，点击时立即加载
       if (!iframe.src) iframe.src = SERVER + '/widget';
@@ -975,6 +1290,8 @@
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
           if (!data || !Array.isArray(data.sites)) return;
+          // 用户既然把这个站设成「不显示图标」，就别再自动展开侧栏去打扰他
+          if (fabHiddenTab || fabHiddenSite) return;
           // 子域名也匹配：存 google.com 时 www.google.com / docs.google.com 都命中（精确相等或 .domain 结尾）
           const match = data.sites.some((s) => {
             if (!s.site_domain || s.enabled === false) return false;
@@ -1027,8 +1344,8 @@
       // iframe/页面改名等更新了用户信息，同步扩展存储里的用户快照，避免刷新后回退旧名
       chrome.storage.local.set({ ac_user: d.user });
     } else if (d.type === 'AC_TOKEN_CLEAR') {
-      // 退出登录，清除扩展存储的token
-      chrome.storage.local.remove(['ac_token', 'ac_user']);
+      // 退出登录，清除扩展存储的token（隐藏名单属于登录用户，一并清掉）
+      chrome.storage.local.remove(['ac_token', 'ac_user', 'ac_hidden_sites']);
     } else if (d.type === 'AC_QUOTE_FOCUS' && d.quote_text) {
       // 划线评论第二期：点击评论引用，在网页中定位并高亮对应的划线文字
       focusQuoteInPage(d);
@@ -1068,21 +1385,43 @@
 
   const CSS_TEXT = `
     :host { all: initial; }
+    /* 位置由 JS 写 left/top（见 applyFabPos），写进去的是视口坐标，所以这里必须 fixed：
+       宿主是 position:fixed + right:0 + 0 尺寸的盒子，若图标用绝对定位，它的包含块原点
+       会落在视口右边缘，同一个 left 会被再加一个 innerWidth（图标直接飞到屏幕外）。
+       （用 top:50% 的老写法也是栽在同一个包含块上：0 高度的宿主要把所有百分比解析成 0） */
     .ac-fab {
-      position: absolute; top: 50%; right: 8px; transform: translateY(-50%);
-      width: 42px; height: 42px; border-radius: 50%; border: none; cursor: pointer;
+      position: fixed; left: 0; top: 0;
+      width: 42px; height: 42px; border-radius: 50%; border: none; cursor: grab;
       background: #4f6ef7; color: #fff; box-shadow: 0 4px 16px rgba(31,36,48,.25);
       display: flex; align-items: center; justify-content: center;
-      transition: right .22s ease, transform .15s ease;
+      touch-action: none; user-select: none; -webkit-user-select: none;
+      padding: 0; outline: none;
     }
-    .ac-fab:hover { transform: translateY(-50%) scale(1.06); }
-    .ac-fab.active { right: 412px; }
-    .ac-fab svg { width: 21px; height: 21px; fill: #fff; }
+    /* 首帧之后才挂上过渡，避免初始位置被当成一次位移动画播出来 */
+    .ac-fab.ac-anim { transition: left .22s ease, top .22s ease, transform .15s ease; }
+    .ac-fab:hover { transform: scale(1.06); }
+    .ac-fab.ac-drag { transition: none; cursor: grabbing; transform: scale(1.06); }
+    .ac-fab svg { width: 21px; height: 21px; fill: #fff; pointer-events: none; }
     .ac-badge {
       position: absolute; top: -4px; left: -4px; min-width: 18px; height: 18px;
       padding: 0 4px; border-radius: 9px; background: #ff4d5e; color: #fff;
-      font: 600 11px/18px system-ui, sans-serif; text-align: center;
+      font: 600 11px/18px system-ui, sans-serif; text-align: center; pointer-events: none;
     }
+    /* 右键菜单：贴着鼠标弹出，定位同样由 JS 写 left/top */
+    .ac-fab-menu {
+      position: fixed; left: 0; top: 0; visibility: hidden;
+      min-width: 136px; padding: 5px; border-radius: 10px;
+      background: #fff; border: 1px solid rgba(31,36,48,.08);
+      box-shadow: 0 8px 28px rgba(31,36,48,.22);
+      font: 500 13px/1.4 system-ui, sans-serif; color: #1f2432;
+    }
+    .ac-menu-item {
+      display: block; width: 100%; padding: 8px 10px; border: none; border-radius: 7px;
+      background: transparent; color: #1f2432; font: inherit; text-align: left;
+      white-space: nowrap; cursor: pointer;
+    }
+    .ac-menu-item:hover { background: #f2f4f8; }
+    .ac-menu-sep { height: 1px; margin: 5px 6px; background: rgba(31,36,48,.08); }
     .ac-panel {
       position: absolute; top: 0; right: 0; height: 100vh; width: 400px; max-width: 92vw;
       background: #fff; box-shadow: -8px 0 28px rgba(31,36,48,.14);
