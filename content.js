@@ -475,15 +475,21 @@
   function openForShare() {
     setTimeout(() => {
       if (!iframe.src) iframe.src = SERVER + '/widget';
-      if (!opened) toggle();
+      if (!opened) setOpened(true);
     }, 300);
   }
 
-  function toggle() {
-    opened = !opened;
+  /**
+   * 侧栏开合的**唯一入口**。
+   * ⚠️ 开合有 3 条触发路径：点悬浮图标、iframe 内点「收起」（postMessage AC_CLOSE）、
+   * 分享链接跳入（openForShare）。它们必须都走这里——任何一条漏掉 applyFabPos()，
+   * 图标就会卡在「避让侧栏」后的那个位置上回不去（关掉侧栏图标仍偏左）。
+   */
+  function setOpened(v) {
+    opened = v;
     panel.classList.toggle('open', opened);
     fab.classList.toggle('active', opened);
-    applyFabPos(); // 侧栏展开时会盖住右下角，图标要让开
+    applyFabPos(); // 展开时让开右下角，收起时立即归位
     if (opened) {
       // 兜底：如果空闲回调还没执行，点击时立即加载
       if (!iframe.src) iframe.src = SERVER + '/widget';
@@ -492,6 +498,10 @@
     } else {
       refreshBadge();
     }
+  }
+
+  function toggle() {
+    setOpened(!opened);
   }
 
   // 划线评论：监听用户选中文字，在选区旁边弹出评论按钮
@@ -1323,10 +1333,7 @@
       // 只有评论区已打开时才发送页面信息（避免预加载时就请求评论数据）
       if (opened) sendPage();
     } else if (d.type === 'AC_CLOSE') {
-      opened = false;
-      panel.classList.remove('open');
-      fab.classList.remove('active');
-      refreshBadge();
+      setOpened(false); // 走统一入口，否则图标会卡在避让侧栏后的位置
     } else if (d.type === 'AC_OPEN_URL' && typeof d.url === 'string') {
       // 从 widget 分享通知打开分享页面（新标签）
       window.open(d.url, '_blank', 'noopener');
