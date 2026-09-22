@@ -10,12 +10,19 @@
       font-family: -apple-system, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
       font-size: 14px; color: #1f2430;
     }
-    .wrap { max-width: 880px; margin: 0 auto; }
+    .wrap { max-width: 1240px; margin: 0 auto; }
     h1 { display: flex; align-items: center; gap: 9px; font-size: 19px; margin: 0 0 4px; }
     h1 img { width: 24px; height: 24px; }
     .sub { color: #8a90a5; font-size: 13px; margin: 0 0 22px; }
-    .grid { display: grid; grid-template-columns: 1fr 320px; gap: 18px; align-items: start; }
-    @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+    /* 设置区两列 + 右侧预览列。预览用 sticky：align-items 必须 stretch（start 会让列盒等于内容高度，
+       sticky 没有可移动的空间就永远不生效），真正贴顶的是里面的 .preview */
+    .grid { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 18px; align-items: stretch; }
+    .cols { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 16px; align-items: start; }
+    .col { min-width: 0; }
+    .preview { position: sticky; top: 16px; }
+    /* 窄屏先退成「设置单列 + 右侧预览」，再退成全部单列 */
+    @media (max-width: 1120px) { .cols { grid-template-columns: 1fr; } }
+    @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } .preview { position: static; } }
     .card { background: #fff; border: 1px solid #e6e9f2; border-radius: 12px; padding: 16px 18px; margin-bottom: 16px; }
     .card h2 { font-size: 14px; margin: 0 0 12px; color: #4b5568; }
     .row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 9px 0; border-top: 1px solid #f1f3f8; }
@@ -48,8 +55,11 @@
     .segs label { display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border: 1px solid #dfe3ee; border-radius: 16px; cursor: pointer; font-size: 13px; }
     .segs label:has(input:checked) { border-color: #4f6ef7; background: #eef2ff; color: #2f54eb; }
     .segs input { accent-color: #4f6ef7; margin: 0; }
+    /* 带药丸单选组的行改成上下排布：两列布局下每列只剩 ~440px，横排会把长说明挤成一竖条（多包随机选择曾被拉成 12 行） */
+    .row:has(.segs) { flex-direction: column; align-items: flex-start; gap: 8px; }
     .indent { padding-left: 14px; margin-top: 8px; }
     .indent.off { opacity: .45; pointer-events: none; }
+    .row.off { opacity: .45; pointer-events: none; }
     table { width: 100%; border-collapse: collapse; font-size: 13px; }
     td { padding: 7px 0; border-top: 1px solid #f1f3f8; }
     tr:first-child td { border-top: none; }
@@ -73,7 +83,8 @@
     <p class="sub">截图上的网址二维码、拍摄时间与品牌标识可以分别开关，改动即时生效，无需刷新网页。</p>
 
     <div class="grid">
-      <div>
+      <div class="cols">
+        <div class="col">
         <div class="card">
           <h2>主题包</h2>
           <p class="note" style="margin:0 0 10px">可下载的扩展主题合集，每个包独立开关；包内主题会出现在下方「预览指定主题」与「默认背景风格」的选择器里。</p>
@@ -107,19 +118,27 @@
             <label class="ac-switch"><input type="checkbox" id="card_memorial_bg" /><span class="ac-switch-slider"></span></label>
           </div>
           <div class="row">
-            <span class="txt"><b>磨砂玻璃卡片</b><span>划线分享卡片的白底变半透明，卡片背后的背景做模糊处理，呈现磨砂玻璃质感；只影响卡片，不影响截图</span></span>
+            <span class="txt"><b>玻璃卡片</b><span>划线分享卡片的白底换成玻璃，透出卡片背后的画面，质感三选一（半透明 / 磨砂玻璃 / 液态玻璃）；只影响卡片，不影响截图</span></span>
             <label class="ac-switch"><input type="checkbox" id="card_glass_mode" /><span class="ac-switch-slider"></span></label>
           </div>
-          <div class="indent" id="glass_blur_box">
+          <div class="indent" id="glass_box">
             <div class="row">
-              <span class="txt"><b>磨砂模糊强度</b><span>卡片背后画面的模糊半径：0 = 只调透明度不模糊，数值越大玻璃越「雾」（拖动即时生效，右侧预览同步）</span></span>
+              <span class="txt"><b>玻璃质感</b><span>半透明 = 直接透出背景、不模糊；磨砂玻璃 = 背景整体起雾；液态玻璃 = 背景只轻模糊（仍看得出是什么）、边缘一圈把外侧画面折射进来并带上镜面高光</span></span>
+              <div class="segs">
+                <label><input type="radio" name="card_glass_style" value="translucent" />半透明</label>
+                <label><input type="radio" name="card_glass_style" value="frost" />磨砂玻璃</label>
+                <label><input type="radio" name="card_glass_style" value="liquid" />液态玻璃</label>
+              </div>
+            </div>
+            <div class="row" id="glass_blur_row">
+              <span class="txt"><b>磨砂模糊强度</b><span>仅「磨砂玻璃」生效：卡片背后画面的模糊半径，数值越大玻璃越「雾」（拖动即时生效，右侧预览同步）</span></span>
               <span style="display:flex;align-items:center;gap:8px">
                 <input type="range" id="card_glass_blur" min="0" max="50" step="1" style="width:140px;accent-color:#4f6ef7" />
                 <span id="card_glass_blur_val" style="min-width:36px;font-size:13px;color:#6b7280">5px</span>
               </span>
             </div>
             <div class="row">
-              <span class="txt"><b>玻璃透明度</b><span>卡片白色面板的不透明度：0 = 全透明只剩模糊背景，100 = 完全不透明白卡，数值越小玻璃越通透（拖动即时生效，右侧预览同步）</span></span>
+              <span class="txt"><b>玻璃透明度</b><span>三种质感通用：卡片白色面板的不透明度，0 = 全透明只剩背景，100 = 完全不透明白卡，数值越小玻璃越通透（拖动即时生效，右侧预览同步）</span></span>
               <span style="display:flex;align-items:center;gap:8px">
                 <input type="range" id="card_glass_alpha" min="0" max="100" step="1" style="width:140px;accent-color:#4f6ef7" />
                 <span id="card_glass_alpha_val" style="min-width:36px;font-size:13px;color:#6b7280">55%</span>
@@ -149,7 +168,9 @@
             </div>
           </div>
         </div>
+        </div><!-- /.col：左列 = 划线分享卡片相关（主题包 / 分享卡片背景 / 划线强调） -->
 
+        <div class="col">
         <div class="card">
           <h2>截图内容</h2>
           <div class="row">
@@ -207,16 +228,19 @@
         </div>
 
         <p class="note">整页截图使用调试协议一次性成像，期间浏览器顶部会出现「AnyComment 开始调试此浏览器」横幅，截图结束自动消失；点横幅的「取消」会中断本次截图。<br />浏览器内部页（chrome://、扩展商店页）不允许截图。整页截图会先把浏览器视口临时撑到整页高度再成像，所以吸顶/固定元素只会出现在图顶部，不会一路重复；代价是按视口尺寸排版的内容（100vh 区块、固定附着背景）可能与平时看到的略有不同。页面过长超出上限时只截取顶部并在完成后提示。</p>
-      </div>
+        </div><!-- /.col：右列 = 截图与其它（截图内容 / 恢复默认 / 快捷键） -->
+      </div><!-- /.cols -->
 
-      <div class="card preview">
-        <h2>效果预览</h2>
-        <p class="ptitle">网页截图</p>
-        <img id="previewImg" alt="截图合成效果预览" style="display:none" />
-        <p class="cap">示例网页截图按当前设置合成的效果，二维码内容为 anycomment.qimengcheng-47e.workers.dev 的示例地址。</p>
-        <p class="ptitle">划线分享金句卡片</p>
-        <img id="previewShareImg" alt="划线分享金句卡片预览" style="display:none" />
-        <p class="cap">选中网页文字点「分享」后生成的金句卡片效果，与上面的截图共用同一套节日/节气主题设置。</p>
+      <div class="side">
+        <div class="card preview">
+          <h2>效果预览</h2>
+          <p class="ptitle">网页截图</p>
+          <img id="previewImg" alt="截图合成效果预览" style="display:none" />
+          <p class="cap">示例网页截图按当前设置合成的效果，二维码内容为 anycomment.qimengcheng-47e.workers.dev 的示例地址。</p>
+          <p class="ptitle">划线分享金句卡片</p>
+          <img id="previewShareImg" alt="划线分享金句卡片预览" style="display:none" />
+          <p class="cap">选中网页文字点「分享」后生成的金句卡片效果，与上面的截图共用同一套节日/节气主题设置。</p>
+        </div>
       </div>
     </div>
   </div>

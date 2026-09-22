@@ -13,17 +13,24 @@
   let memorialBg = false;
   let defaultTheme = '';
   let glassMode = false;
+  let glassStyle = 'frost';
   let glassBlur = 5;
   let glassAlpha = 55;
   let markerOn = true;
   let doodleOn = true;
-  chrome.storage.local.get({ card_festival_bg: true, card_memorial_bg: false, card_default_theme: '', card_glass_mode: false, card_glass_blur: 5, card_glass_alpha: 55, card_marker: true, card_doodle: true }, (r) => {
+  // 玻璃样式的推导口径与设置页共用 card-core 的 resolveGlassStyle（无 card_glass_style 时按旧 blur 迁移）
+  const resolveGlassStyle = () => globalThis.__acCardCoreInternals.resolveGlassStyle(glassCfg);
+  const glassCfg = { card_glass_style: '', card_glass_blur: 5 };
+  chrome.storage.local.get({ card_festival_bg: true, card_memorial_bg: false, card_default_theme: '', card_glass_mode: false, card_glass_style: '', card_glass_blur: 5, card_glass_alpha: 55, card_marker: true, card_doodle: true }, (r) => {
     if (r) {
       if (r.card_festival_bg === false) festiveBg = false;
       memorialBg = r.card_memorial_bg === true;
       defaultTheme = r.card_default_theme || '';
       glassMode = r.card_glass_mode === true;
-      glassBlur = typeof r.card_glass_blur === 'number' ? r.card_glass_blur : 5;
+      glassCfg.card_glass_style = typeof r.card_glass_style === 'string' ? r.card_glass_style : '';
+      glassCfg.card_glass_blur = typeof r.card_glass_blur === 'number' ? r.card_glass_blur : 5;
+      glassBlur = glassCfg.card_glass_blur;
+      glassStyle = resolveGlassStyle();
       glassAlpha = typeof r.card_glass_alpha === 'number' ? r.card_glass_alpha : 55;
       markerOn = r.card_marker !== false;
       doodleOn = r.card_doodle !== false;
@@ -35,7 +42,12 @@
     if (changes.card_memorial_bg) memorialBg = changes.card_memorial_bg.newValue === true;
     if (changes.card_default_theme) defaultTheme = changes.card_default_theme.newValue || '';
     if (changes.card_glass_mode) glassMode = changes.card_glass_mode.newValue === true;
-    if (changes.card_glass_blur) glassBlur = typeof changes.card_glass_blur.newValue === 'number' ? changes.card_glass_blur.newValue : 5;
+    if (changes.card_glass_style) { glassCfg.card_glass_style = changes.card_glass_style.newValue || ''; glassStyle = resolveGlassStyle(); }
+    if (changes.card_glass_blur) {
+      glassCfg.card_glass_blur = typeof changes.card_glass_blur.newValue === 'number' ? changes.card_glass_blur.newValue : 5;
+      glassBlur = glassCfg.card_glass_blur;
+      glassStyle = resolveGlassStyle(); // 只有未设置样式的老数据会因它变 0 而判成半透明
+    }
     if (changes.card_glass_alpha) glassAlpha = typeof changes.card_glass_alpha.newValue === 'number' ? changes.card_glass_alpha.newValue : 55;
     if (changes.card_marker) markerOn = changes.card_marker.newValue !== false;
     if (changes.card_doodle) doodleOn = changes.card_doodle.newValue !== false;
@@ -701,9 +713,10 @@
   }
 
   // 划线分享：生成卡片 + 预览浮层（下载/复制），登录态下记录并即时标虚线。
-  // 开启「划线强调」时，卡片给关键词上小红书风荧光笔划线：调色板（黄橙粉绿蓝紫 + 彩虹渐变）
-  // 以悬浮工具条形式贴在卡片下缘（不占浮层高度），选中的颜色应用到之后点的词，
-  // 再点已高亮的词取消；每个词各留自己的颜色
+  // 开启「划线强调」时，卡片给关键词上小红书风荧光笔划线：调色板（黄橙粉绿蓝紫洋红 + 彩虹渐变）
+  // 以悬浮工具条形式贴在卡片下缘（不占浮层高度），选中的颜色应用到之后划的词。
+  // 划词方式是「按住鼠标拖动」整段选（按阅读顺序，跨行也连选），不是逐字点；逐词单击仍保留，
+  // 用来补漏或取消个别词。每个词各留自己的颜色
   function onQuoteShare() {
     if (!pendingQuote) return;
     const q = pendingQuote;
@@ -720,7 +733,7 @@
       let curPack; // 手动「换一张背景」后的包条目；未换则 undefined 走自动路径
       const render = () => card.drawShareCard({
         text: q.text, title: document.title, site: location.host, url: pageUrl(),
-        festive: festiveBg, memorial: memorialBg, defaultTheme, glass: glassMode, glassBlur, glassAlpha,
+        festive: festiveBg, memorial: memorialBg, defaultTheme, glass: glassMode, glassStyle, glassBlur, glassAlpha,
         packArt: curPack, marker: useMarker, doodle, highlight: hl,
       });
       // 底部按钮行只管「输出」类操作，调色板等编辑操作全部走图片上的悬浮工具条（见 buildFloatActions）
@@ -780,9 +793,26 @@
         if (hl[key]) delete hl[key]; else hl[key] = activeColor; // 已高亮→取消，未高亮→用当前色划上
         updateImg(render());
       } : undefined;
+      // 按住拖动划线（替代逐词点选）：整段选词与几何由 card.quoteRangeAt 按 LAST_QUOTE
+      // 同一套数字算好，这里只定口径——划还是擦看「起点那个词原本有没有划」（用户拍板）：
+      // 起点已划 → 松手把整段擦掉；起点未划 → 整段涂成调色板当前色。
+      // 拖动途中只做 DOM 预览（整张 canvas 重绘在玻璃/主题包版式下几十毫秒，逐帧会卡），
+      // 松手才 updateImg 落一次笔（顺带自动回写剪贴板）。单击逐词 toggle 仍然保留，便于补漏。
+      const onImageDrag = useMarker ? (fx0, fy0, fx1, fy1, { setPreview, updateImg, commit }) => {
+        const R = card.quoteRangeAt(fx0, fy0, fx1, fy1);
+        if (!R || !R.keys.length) { setPreview(null); return; }
+        const erase = !!hl[R.anchor];
+        if (!commit) {
+          const css = (palette.find((c) => c.id === activeColor) || {}).css;
+          setPreview(R.rects, css, erase);
+          return;
+        }
+        for (const k of R.keys) { if (erase) delete hl[k]; else hl[k] = activeColor; }
+        updateImg(render());
+      } : undefined;
       const open = () => card.showPreview(shadow, render(), {
         alt: '划线分享卡片预览', actions: buildActions(), floatActions: buildFloatActions(),
-        annotate: true, onImageClick,
+        annotate: true, onImageClick, onImageDrag,
       });
       open();
       recordQuoteShare(q); // 记录划线（登录态），并即时给页面加虚线

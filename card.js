@@ -6,7 +6,7 @@
   const C = globalThis.__acCardCore, CI = globalThis.__acCardCoreInternals;
   const A = globalThis.__acCardArt, AI = globalThis.__acCardArtInternals;
   const { fontMain, wrapText, roundRectPath, buildQrMatrix, drawQrModules, paintWhiteCard, SHOT_DEFAULTS, fmtShotTime, cleanUrlForQr } = C;
-  const { paintGlassCard, glassTextHalo, frostText } = CI;
+  const { paintGlassPanel, glassTextHalo, frostText, GLASS_STYLES } = CI;
   const { paintBackdrop, paintCardAccent, resolveTheme, resolveDayTheme, themeDateInYear, THEME_LIST, paintMarker, paintDoodle, MARKER_PALETTE } = A;
   const { paintThemeIcon, makeRng } = AI;
 
@@ -97,16 +97,85 @@
   }
   let LAST_QUOTE = null; // 最近一次带划线的 drawShareCard 布局，供预览层命中测试
 
+  // ===== 预览层「按住拖动划线」的命中（点词与拖动共用，勿各写一套坐标口径）=====
+  const isQuoteSpace = (t) => /^\s+$/.test(t);
+  // 一行的可命中词块下标：空白只当词间胶水，不作为选词端点
+  function quoteWordIdxs(line) {
+    const out = [];
+    for (let i = 0; i < line.length; i++) if (!isQuoteSpace(line[i].t)) out.push(i);
+    return out;
+  }
+  // 分数坐标 → 最近的词块 { li, ti }。纵向优先取所在行，落在行距/文字区外时钳到最近一行；
+  // 横向按「到词块区间的距离」取最近词：落在词内距离 0（词的左右半部都算这个词，勿改成中点二分，
+  // 那样点在词右半边会误命中下一个词），落在词间空隙则取较近的一边、并列偏左
+  function quoteNearest(L, fx, fy) {
+    const cx = fx * L.W, cy = fy * L.H;
+    let li = 0, best = Infinity;
+    for (let i = 0; i < L.tokens.length; i++) {
+      const yTop = L.quoteTop + i * L.lineH - 20;
+      if (cy >= yTop - 8 && cy <= yTop + L.fs + 8) { li = i; break; }
+      const d = Math.abs(cy - (yTop + L.fs / 2));
+      if (d < best) { best = d; li = i; }
+    }
+    const words = quoteWordIdxs(L.tokens[li]);
+    if (!words.length) return null;
+    let ti = words[0];
+    best = Infinity;
+    for (const k of words) {
+      const tok = L.tokens[li][k];
+      const x0 = L.PAD + tok.x, x1 = x0 + tok.w;
+      const d = cx < x0 ? x0 - cx : (cx > x1 ? cx - x1 : 0);
+      if (d < best) { best = d; ti = k; }
+    }
+    return { li, ti };
+  }
+  // 两点（相对图片的分数坐标 0~1）→ 按阅读顺序整段选中：{ anchor, keys, rects }，无布局时 null。
+  // anchor = 起点词块 key（调用方据此决定整段是划上还是擦掉）；keys = 起点到终点之间所有词块
+  // （中间整行全选，与网页里选一段文字一致）；rects = 逐行合并后的长条，仍是分数坐标，
+  // 竖直位置对齐 paintMarker 的笔带（top = yTop + fs*0.48、厚 = max(13, fs*0.52)），
+  // 拖动预览按百分比贴上去就是松手后荧光笔真正出现的地方。
+  function quoteRangeAt(fx0, fy0, fx1, fy1) {
+    const L = LAST_QUOTE;
+    if (!L || !L.tokens.length) return null;
+    const a = quoteNearest(L, fx0, fy0), b = quoteNearest(L, fx1, fy1);
+    if (!a || !b) return null;
+    let s = a, e = b;
+    if (s.li > e.li || (s.li === e.li && s.ti > e.ti)) { s = b; e = a; } // 反向拖动归一
+    const keys = [], rects = [], thick = Math.max(13, L.fs * 0.52);
+    for (let i = s.li; i <= e.li; i++) {
+      const line = L.tokens[i];
+      if (!line) continue;
+      const lo = i === s.li ? s.ti : -Infinity;
+      const hi = i === e.li ? e.ti : Infinity;
+      let x0 = 0, x1 = 0, has = false;
+      for (const k of quoteWordIdxs(line)) {
+        if (k < lo || k > hi) continue;
+        keys.push(`${i}:${k}`);
+        if (!has) { x0 = line[k].x; has = true; }
+        x1 = line[k].x + line[k].w;
+      }
+      if (!has) continue;
+      const yTop = L.quoteTop + i * L.lineH - 20;
+      rects.push({
+        li: i, // 行号带着，便于调用方/测试核对
+        x: (L.PAD + x0) / L.W, y: (yTop + L.fs * 0.48) / L.H,
+        w: (x1 - x0) / L.W, h: thick / L.H,
+      });
+    }
+    return { anchor: `${a.li}:${a.ti}`, keys, rects };
+  }
+
   // 用 Canvas 绘制金句卡片，返回 dataURL(2x)。
   // festive=false 关掉节日/节气背景；memorial 开启纪念日主题（优先于节日）；
   // themeId 指定主题名（设置页预览用，优先级最高）；
   // defaultTheme 是无命中时的兜底风格名（card_default_theme 设置）；
   // packArt 为主题包（DLC）背景：显式传 { name, label, img }（设置页预览）或不传走自动路径
   // 读 themepacks.js 发布的 __acThemePack；优先级：显式 themeId > 主题包 > 节日/节气 > 默认。
-  // glass=true 时走磨砂玻璃模式：白卡变半透明、背后画面模糊（card_glass_mode 设置）；
-  // glassBlur 为模糊半径 px（card_glass_blur 设置，0 = 只调透明度）；
-  // glassAlpha 为白色面板不透明度 %（card_glass_alpha 设置，0~100）
-  function drawShareCard({ text, title, site, url, festive = true, memorial = false, themeId = '', defaultTheme = '', packArt, glass = false, glassBlur = 5, glassAlpha = 55, marker = false, doodle = false, highlight = null }) {
+  // glass=true 时走玻璃模式：白卡变半透明、背后画面按样式处理（card_glass_mode 总开关）；
+  // glassStyle 三选一（card_glass_style）：translucent 半透明 / frost 磨砂玻璃 / liquid 液态玻璃；
+  // glassBlur 为模糊半径 px（card_glass_blur 设置，只对 frost 生效；translucent 恒为 0，liquid 自带轻模糊）；
+  // glassAlpha 为白色面板不透明度 %（card_glass_alpha 设置，0~100，三种样式通用）
+  function drawShareCard({ text, title, site, url, festive = true, memorial = false, themeId = '', defaultTheme = '', packArt, glass = false, glassStyle = 'frost', glassBlur = 5, glassAlpha = 55, marker = false, doodle = false, highlight = null }) {
     // packArt 显式传值（设置页预览）> 自动路径 __acThemePack（当日命中）> 显式 themeId >
     // 当天节日/节气/纪念日 > defaultTheme 兜底（主题名或 pack_<id>:<key> 主题包条目，经
     // entrySync 同步解析——图片须已在引擎缓存，themepacks.js 会按 card_default_theme 预热）
@@ -135,6 +204,8 @@
       }
     }
     const W = 720, PAD = 56, DPR = 2;
+    // 玻璃样式兜底：缺省/非法值一律按磨砂玻璃（与升级前的唯一样式一致）
+    const gStyle = GLASS_STYLES.includes(glassStyle) ? glassStyle : 'frost';
     // 先用离屏 canvas 测量文字行数
     const meas = document.createElement('canvas').getContext('2d');
     meas.font = fontMain(30);
@@ -189,8 +260,8 @@
       ctx.drawImage(pack.img, (W - iw) / 2, 0, iw, ih);
       ctx.save();
       if (glass) {
-        // 磨砂玻璃面板：面板背后的海报区域模糊，白底换半透明
-        paintGlassCard(ctx, cx, panelTop, cw, H - 28 - panelTop, r, glassBlur, glassAlpha);
+        // 玻璃面板：面板背后的海报区域按样式处理（半透明不模糊 / 磨砂整片起雾 / 液态玻璃边缘折射+镜面高光）
+        paintGlassPanel(ctx, gStyle, cx, panelTop, cw, H - 28 - panelTop, r, glassBlur, glassAlpha);
       } else {
         ctx.fillStyle = 'rgba(255,255,255,0.93)';
         ctx.shadowColor = 'rgba(31,36,48,0.12)';
@@ -203,7 +274,7 @@
       ctx.restore();
     } else {
       paintBackdrop(ctx, W, H, 1, theme);
-      if (glass) paintGlassCard(ctx, cx, cy, cw, ch, r, glassBlur, glassAlpha);
+      if (glass) paintGlassPanel(ctx, gStyle, cx, cy, cw, ch, r, glassBlur, glassAlpha);
       else paintWhiteCard(ctx, cx, cy, cw, ch, r, 24, 8);
       paintCardAccent(ctx, theme, cx, cy, cw, ch, r, 1);
       paintThemeIcon(ctx, theme, W, H, 1);
@@ -631,6 +702,13 @@
     .ac-share-icn:hover { background: #eef1fb; }
     .ac-share-icn.on { background: #4f6ef7; color: #fff; }
     .ac-share-vsep { width: 1px; height: 18px; background: rgba(31,36,48,.14); }
+    /* 拖动划线的实时预览层：DOM 色块按分数坐标（百分比）贴在图片上，pointer-events:none
+       保证指针事件仍落到图片容器。整张 canvas 一次重绘在玻璃/主题包版式下要几十毫秒，
+       逐帧重绘会卡，所以拖动途中只画这层，松手才落一次真笔 */
+    .ac-drag-bands { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+    .ac-drag-bands > i { position: absolute; display: block; border-radius: 2px; opacity: .55; }
+    /* 擦除预览：不铺色，改画虚线框，读作"松手后这几条会消失" */
+    .ac-drag-bands.erase > i { opacity: 1; box-shadow: inset 0 0 0 1.5px rgba(31,36,48,.5); }
     .ac-share-btn {
       padding: 8px 18px; border-radius: 8px; border: none; cursor: pointer;
       font: 600 13px/1 system-ui, sans-serif;
@@ -826,17 +904,80 @@
       sync();
       host.append(fb);
     }
-    // 点卡片切换划线高亮：仅当调用方提供 onImageClick（分享卡走此交互，此时标注层已关闭）。
-    // 传回的是相对图片的分数坐标（0~1），由调用方换算到卡片像素做词块命中；updateImg 供其重绘并自动回写剪贴板
+    // 卡片上的划线交互。card.js 只管指针机制，选词语义全在调用方：
+    //   onImageClick(fx, fy, api)                 —— 按下后没怎么移动就抬起（=原 click），逐词微调
+    //   onImageDrag(fx0, fy0, fx1, fy1, api)      —— 按住拖动：移动中每次调用（api.commit=false，
+    //                                                请只用 api.setPreview 画预览），松手调一次
+    //                                                （api.commit=true，此时才 api.updateImg 落笔）
+    // 坐标都是相对图片的分数值（0~1）；贴纸模式下两者都不触发，留给标注编辑器
     if (typeof opts.onImageClick === 'function') {
       const target = clickTarget || view;
       target.style.cursor = 'crosshair';
-      target.addEventListener('click', (e) => {
-        if (stickerMode) return; // 贴纸模式下不触发高亮
+      // 色块宿主：annotate 的 .ac-anno-wrap / 无标注时包图片的 .ac-share-view 壳。
+      // 直接命中 <img> 时它挂不了子节点，退到父级并补 position:relative
+      const bandsHost = document.createElement('div');
+      bandsHost.className = 'ac-drag-bands';
+      const shell = target.tagName === 'IMG' ? (target.parentElement || target) : target;
+      if (getComputedStyle(shell).position === 'static') shell.style.position = 'relative';
+      shell.append(bandsHost);
+      // 预览色块：rect 是相对图片的分数坐标，这里换算成宿主内的像素（图片若在宿主里有偏移/
+      // 缩放也照样贴准），erase 时只描虚线不铺色
+      const setPreview = (rects, css, erase) => {
+        bandsHost.replaceChildren();
+        if (!rects || !rects.length) return;
+        const imgR = target.getBoundingClientRect(), hostR = shell.getBoundingClientRect();
+        if (!imgR.width || !imgR.height) return;
+        bandsHost.classList.toggle('erase', !!erase);
+        const frag = document.createDocumentFragment();
+        for (const b of rects) {
+          const d = document.createElement('i');
+          d.style.left = `${imgR.left - hostR.left + b.x * imgR.width}px`;
+          d.style.top = `${imgR.top - hostR.top + b.y * imgR.height}px`;
+          d.style.width = `${b.w * imgR.width}px`;
+          d.style.height = `${b.h * imgR.height}px`;
+          if (!erase) d.style.background = css || '#fff2a8';
+          frag.append(d);
+        }
+        bandsHost.append(frag);
+      };
+      const api = { updateImg, setPreview, commit: false };
+      const DRAG_MIN = 5; // 位移阈值（px）：没超过它算单击，手抖不会误划一整段
+      let st = null;
+      const fracAt = (e) => {
         const rect = target.getBoundingClientRect();
-        if (!rect.width || !rect.height) return;
-        opts.onImageClick((e.clientX - rect.left) / rect.width, (e.clientY - rect.top) / rect.height, { updateImg });
+        if (!rect.width || !rect.height) return null;
+        return [(e.clientX - rect.left) / rect.width, (e.clientY - rect.top) / rect.height];
+      };
+      target.addEventListener('pointerdown', (e) => {
+        if (stickerMode || e.button !== 0) return;
+        const p = fracAt(e);
+        if (!p) return;
+        st = { x0: p[0], y0: p[1], sx: e.clientX, sy: e.clientY, dragging: false };
+        e.preventDefault(); // 别让拖动过程选中图片或宿主页文字
+        try { target.setPointerCapture(e.pointerId); } catch { /* 忽略：拿不到捕获照常按抬起判定 */ }
       });
+      target.addEventListener('pointermove', (e) => {
+        if (!st || typeof opts.onImageDrag !== 'function') return;
+        if (!st.dragging) {
+          if (Math.abs(e.clientX - st.sx) + Math.abs(e.clientY - st.sy) < DRAG_MIN) return;
+          st.dragging = true;
+        }
+        const p = fracAt(e);
+        if (p) opts.onImageDrag(st.x0, st.y0, p[0], p[1], Object.assign(api, { commit: false }));
+      });
+      target.addEventListener('pointerup', (e) => {
+        if (!st) return;
+        const s = st;
+        st = null;
+        setPreview(null);
+        const p = fracAt(e) || [s.x0, s.y0];
+        if (s.dragging && typeof opts.onImageDrag === 'function') {
+          opts.onImageDrag(s.x0, s.y0, p[0], p[1], Object.assign(api, { commit: true }));
+        } else {
+          opts.onImageClick(s.x0, s.y0, api);
+        }
+      });
+      target.addEventListener('pointercancel', () => { st = null; setPreview(null); });
     }
     const btnClose = document.createElement('button');
     btnClose.className = 'ac-share-btn ac-share-close';
@@ -883,6 +1024,6 @@
     drawQrModules, paintBackdrop, paintWhiteCard, paintCardAccent, resolveTheme,
     resolveDayTheme, themeDateInYear, THEME_LIST, fmtShotTime, drawShareCard,
     composeScreenshot, planShot, showPreview, PREVIEW_CSS,
-    autoHighlight: autoHighlightKeys, lastQuoteLayout: () => LAST_QUOTE, MARKER_PALETTE,
+    autoHighlight: autoHighlightKeys, lastQuoteLayout: () => LAST_QUOTE, quoteRangeAt, MARKER_PALETTE,
   };
 })();

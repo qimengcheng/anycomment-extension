@@ -1,6 +1,7 @@
 // AnyComment 截图设置页：读写 chrome.storage.local 的 shot_* 配置 + 主题包开关 + 实时预览
 (() => {
   const card = globalThis.__acCard;
+  const CI = globalThis.__acCardCoreInternals; // 玻璃样式推导与绘制走 card-core 同一口径（与 content.js 一致）
   const packsApi = globalThis.__acThemePacks || null;
   const packs = (packsApi && packsApi.packs) || [];
   const $ = (id) => document.getElementById(id);
@@ -57,11 +58,15 @@
     $('card_festival_bg').checked = cfg.card_festival_bg !== false;
     $('card_memorial_bg').checked = cfg.card_memorial_bg === true;
     $('card_glass_mode').checked = cfg.card_glass_mode === true;
+    const glassStyle = CI.resolveGlassStyle(cfg);
+    const glassStyleEl = document.querySelector(`input[name="card_glass_style"][value="${glassStyle}"]`);
+    if (glassStyleEl) glassStyleEl.checked = true;
     $('card_glass_blur').value = typeof cfg.card_glass_blur === 'number' ? cfg.card_glass_blur : 5;
     $('card_glass_blur_val').textContent = `${$('card_glass_blur').value}px`;
     $('card_glass_alpha').value = typeof cfg.card_glass_alpha === 'number' ? cfg.card_glass_alpha : 55;
     $('card_glass_alpha_val').textContent = `${$('card_glass_alpha').value}%`;
-    $('glass_blur_box').classList.toggle('off', cfg.card_glass_mode !== true);
+    $('glass_box').classList.toggle('off', cfg.card_glass_mode !== true);
+    $('glass_blur_row').classList.toggle('off', glassStyle !== 'frost'); // 模糊只对磨砂玻璃有意义
     $('card_marker').checked = cfg.card_marker !== false;
     $('card_doodle').checked = cfg.card_doodle !== false;
     $('doodle_box').classList.toggle('off', cfg.card_marker === false);
@@ -91,6 +96,9 @@
   $('card_festival_bg').addEventListener('change', (e) => save({ card_festival_bg: e.target.checked }));
   $('card_memorial_bg').addEventListener('change', (e) => save({ card_memorial_bg: e.target.checked }));
   $('card_glass_mode').addEventListener('change', (e) => save({ card_glass_mode: e.target.checked }));
+  for (const el of document.querySelectorAll('input[name="card_glass_style"]')) {
+    el.addEventListener('change', () => save({ card_glass_style: el.value }));
+  }
   $('card_marker').addEventListener('change', (e) => save({ card_marker: e.target.checked }));
   $('card_doodle').addEventListener('change', (e) => save({ card_doodle: e.target.checked }));
   $('card_glass_blur').addEventListener('input', (e) => saveSlider('card_glass_blur', Number(e.target.value), $('card_glass_blur_val'), (v) => `${v}px`));
@@ -457,6 +465,7 @@
         festive: cfg.card_festival_bg !== false,
         memorial: cfg.card_memorial_bg === true,
         glass: cfg.card_glass_mode === true,
+        glassStyle: CI.resolveGlassStyle(cfg),
         glassBlur: typeof cfg.card_glass_blur === 'number' ? cfg.card_glass_blur : 5,
         glassAlpha: typeof cfg.card_glass_alpha === 'number' ? cfg.card_glass_alpha : 55,
         themeId: previewTheme.startsWith('pack_') ? '' : previewTheme,
