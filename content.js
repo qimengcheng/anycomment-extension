@@ -5,6 +5,7 @@
   // 固定服务器地址（不可修改）
   const SERVER = 'https://anycomment.qimengcheng-47e.workers.dev';
   const serverOrigin = safeOrigin(SERVER);
+  globalThis.__acServer = SERVER; // 同隔离世界共享给 capture.js（截图分享上报用），避免二次硬编码域名
   const card = globalThis.__acCard; // 绘制与预览原语见 card.js（同一隔离世界，manifest 先加载）
 
   // 节日/节气背景开关 + 纪念日背景开关 + 无命中兜底风格：模块级镜像读取（与 capture.js 同模式），

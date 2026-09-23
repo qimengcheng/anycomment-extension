@@ -4,6 +4,7 @@
   if (window.top !== window) return; // 只在顶级页面运行
   const card = globalThis.__acCard;
   if (!card) return;
+  const SERVER = globalThis.__acServer; // 服务器地址由 content.js 在同隔离世界共享（manifest 先于本文件加载）
 
   // 输出画布单边上限：CDP 与 Canvas 都有硬限制，整页长图靠降 clip.scale 兜住
   const MAX_OUT_PX = 8192;
