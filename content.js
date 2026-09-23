@@ -58,6 +58,8 @@
     }
     if (changes.ac_fab_pos && !fabDragging) {
       fabPos = readPos(changes.ac_fab_pos.newValue, siteKey);
+      fabEdge = (fabPos && fabPos.edge) || null; // 另一页改了贴边状态，这里同步
+      fabPopped = false;
       applyFabPos();
     }
   });
@@ -80,9 +82,13 @@
   const FAB_SIZE = 42;         // 与 CSS 里 .ac-fab 的宽高保持一致
   const FAB_MARGIN = 8;        // 贴边留白
   const FAB_POS_MAX = 100;     // 位置记录最多保留 100 个站点，超了淘汰最久没动的，避免无限膨胀
+  const FAB_PEEK = 10;         // 贴边隐藏后露出的一条（px）：左右缘露竖条、上缘露横条，提示「还在」
+  const FAB_SNAP_RANGE = 28;   // 拖动落点距屏幕左/右/上边缘多近算「贴边」
   const HIDDEN_TTL = 60_000;   // 隐藏名单本地缓存 60s（与服务端 memo 同口径），期内不再重复请求
   const siteKey = location.host.toLowerCase();
-  let fabPos = null;           // 本站的自定义位置 { l, t }；null = 默认（贴右边距、垂直居中）
+  let fabPos = null;           // 本站的自定义位置 { l, t, edge? }；null = 默认（贴右边距、垂直居中）；edge = 贴边隐藏在哪一侧
+  let fabEdge = null;          // 'l' | 'r' | 't' | null：贴边隐藏侧，随 fabPos.edge 持久化（内存镜像，方便判断）
+  let fabPopped = false;       // 贴边隐藏后是否临时滑出（悬停唤出态），2 秒无操作缩回
   let fabCur = null;           // 图标当前实际坐标（视口坐标），由 JS 记账，不回头读布局
   let fabHiddenTab = false;    // 右键「本次隐藏」：只作用于当前页面，刷新即恢复，不落存储
   let fabHiddenSite = false;   // 命中服务端「不显示图标的网站」
@@ -102,6 +108,7 @@
     // 先用本地缓存的名单和位置判定，命中隐藏就不必等接口返回，避免图标闪一下再消失
     fabHiddenSite = hiddenMatch(readHiddenCache(c.ac_hidden_sites).sites, siteKey);
     fabPos = readPos(c.ac_fab_pos, siteKey);
+    fabEdge = (fabPos && fabPos.edge) || null;
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', mount, { once: true });
     } else {
@@ -142,11 +149,13 @@
     return (sites || []).some((s) => h === s || h.endsWith('.' + s));
   }
 
-  /** 读取某个站点的位置记录；没有或字段非法 → null（表示用默认位置） */
+  /** 读取某个站点的位置记录；没有或字段非法 → null（表示用默认位置）。edge 是贴边隐藏侧（l/r/t），可缺省 */
   function readPos(map, key) {
     const v = map && typeof map === 'object' ? map[key] : null;
     if (!v || typeof v.l !== 'number' || typeof v.t !== 'number') return null;
-    return { l: v.l, t: v.t };
+    const p = { l: v.l, t: v.t };
+    if (v.edge === 'l' || v.edge === 'r' || v.edge === 't') p.edge = v.edge;
+    return p;
   }
 
   /** 把坐标夹回视口内（窗口缩小后图标不至于被推出屏幕外） */
@@ -172,18 +181,28 @@
     };
   }
 
-  /** 落位：侧栏展开且图标会被盖住时左移一个侧栏宽度（本来就在左边的图标不动） */
+  /**
+   * 落位：侧栏展开且图标会被盖住时左移一个侧栏宽度（本来就在左边的图标不动）。
+   * 贴边隐藏（fabPos.edge 且未被悬停唤出）时缩进大半只露 FAB_PEEK 一条——
+   * 左/右缘缩的是 left，上缘缩的是 top；这个越界坐标是故意的，不能走 clampPos，
+   * 否则贴边会被夹回屏内。
+   */
   function applyFabPos() {
     if (!fab) return;
     const base = clampPos(fabPos || fabDefaultPos());
     let left = base.l;
+    let top = base.t;
     if (opened) {
       const panelW = Math.min(400, Math.round(window.innerWidth * 0.92));
       if (base.l + FAB_SIZE > window.innerWidth - panelW) left = Math.max(FAB_MARGIN, base.l - panelW - 12);
+    } else if (fabPos && fabPos.edge && !fabPopped) {
+      if (fabPos.edge === 'r') left = window.innerWidth - FAB_PEEK;
+      else if (fabPos.edge === 'l') left = FAB_PEEK - FAB_SIZE;
+      else if (fabPos.edge === 't') top = FAB_PEEK - FAB_SIZE;
     }
-    fabCur = { l: left, t: base.t };
+    fabCur = { l: left, t: top };
     fab.style.left = left + 'px';
-    fab.style.top = base.t + 'px';
+    fab.style.top = top + 'px';
   }
 
   /** 隐藏图标 = 「本次隐藏」或命中服务端名单；只藏图标，选中文字的评论/分享入口与页面划线标记照旧 */
@@ -198,7 +217,7 @@
   function saveFabPos(p) {
     chrome.storage.local.get({ ac_fab_pos: null }, (r) => {
       const map = (r && r.ac_fab_pos && typeof r.ac_fab_pos === 'object') ? { ...r.ac_fab_pos } : {};
-      map[siteKey] = { l: p.l, t: p.t, at: Date.now() };
+      map[siteKey] = { l: p.l, t: p.t, edge: p.edge, at: Date.now() };
       const keys = Object.keys(map);
       if (keys.length > FAB_POS_MAX) {
         keys.sort((a, b) => ((map[a] && map[a].at) || 0) - ((map[b] && map[b].at) || 0));
@@ -216,7 +235,20 @@
       chrome.storage.local.set({ ac_fab_pos: map });
     });
     fabPos = null;
+    fabEdge = null;
+    fabPopped = false;
     applyFabPos();
+  }
+
+  /** 取消贴边隐藏：图标在原位完整显示（仍贴着边缘），只去掉贴边标记；想再贴边拖回边缘即可 */
+  function unsnapFab() {
+    if (!fabPos || !fabPos.edge) return;
+    fabEdge = null;
+    fabPopped = false;
+    delete fabPos.edge;
+    saveFabPos(fabPos);
+    applyFabPos();
+    showExtToast('已取消贴边隐藏');
   }
 
   // ---- 拖动：指针事件 + 指针捕获，拖动中关掉过渡保证跟手 ----
@@ -226,15 +258,34 @@
   let fabDragLast = null;  // 拖动过程中最后一次算出的落点
 
   // ---- 闲置渐隐：出现 2 秒后加 .idle 降到 30% 透明度；交互（pointerdown/悬停）立即恢复并重新计时 ----
+  // 贴边隐藏（fabEdge）时不做透明度渐隐（露出的那条弧要始终可见），计时到点只负责「缩回贴边」
   let fabFadeTimer = null;
   function armFabFade() {
     if (fabDragging) return; // 拖动中不计时，松手时才重新开始
+    try { if (fab && fab.matches(':hover')) return; } catch { /* 老浏览器不支持 :hover 匹配则忽略 */ }
     if (fabFadeTimer) clearTimeout(fabFadeTimer);
-    fabFadeTimer = setTimeout(() => { fabFadeTimer = null; if (fab) fab.classList.add('idle'); }, 2000);
+    fabFadeTimer = setTimeout(() => {
+      fabFadeTimer = null;
+      if (fabEdge) {
+        if (fabPopped) { fabPopped = false; applyFabPos(); } // 悬停唤出后 2 秒无操作 → 缩回贴边
+        return;
+      }
+      if (fab) fab.classList.add('idle');
+    }, 2000);
   }
   function wakeFab() {
     if (fabFadeTimer) { clearTimeout(fabFadeTimer); fabFadeTimer = null; }
     if (fab) fab.classList.remove('idle');
+  }
+  /** 贴边态的悬停唤出：滑出完整图标并保持不透明；普通态等价于 wakeFab */
+  function onFabHover() {
+    if (fabEdge && !opened) {
+      fabPopped = true;
+      wakeFab();
+      applyFabPos();
+      return;
+    }
+    wakeFab();
   }
 
   function onFabPointerDown(e) {
@@ -274,15 +325,35 @@
     if (!fabDragMoved) return; // 没真正移动 → 交给 click 去打开侧栏
     suppressFabClick = true;
     fab.classList.remove('ac-drag');
-    armFabFade(); // 拖完松手，重新开始闲置计时
     // 用拖动过程中记下的落点，不回头读 getBoundingClientRect：
     // 过渡刚恢复那一帧读回的是动画中间值，会把位置记错
     fabPos = clampPos(fabDragLast || fabCur || fabDefaultPos());
     fabCur = fabPos;
     fabDragLast = null;
-    fab.style.left = fabPos.l + 'px';
-    fab.style.top = fabPos.t + 'px';
+    // 贴边判定：落点距左/右/上边缘最近且在范围内 → 吸附成贴边隐藏（位置记成贴齐边缘的完整位，
+    // 显示时再缩进只露一条）；从贴边拖离则解除贴边，恢复普通位置。
+    // 角落同时够到两条边时取更近的那条（gapL/gapR/gapT 三选一），避免同一落点反复横跳。
+    const gapL = fabPos.l;
+    const gapR = window.innerWidth - (fabPos.l + FAB_SIZE);
+    const gapT = fabPos.t;
+    const nearest = Math.min(gapL, gapR, gapT);
+    if (nearest <= FAB_SNAP_RANGE) {
+      if (nearest === gapT) fabEdge = 't';
+      else if (nearest === gapR) fabEdge = 'r';
+      else fabEdge = 'l';
+      fabPos = {
+        l: fabEdge === 'r' ? window.innerWidth - FAB_MARGIN - FAB_SIZE : (fabEdge === 'l' ? FAB_MARGIN : fabPos.l),
+        t: fabEdge === 't' ? FAB_MARGIN : fabPos.t,
+        edge: fabEdge,
+      };
+    } else {
+      fabEdge = null;
+      delete fabPos.edge;
+    }
+    fabPopped = false;
+    applyFabPos(); // 贴边时走一次 .22s 的滑入动画收进边缘
     saveFabPos(fabPos);
+    armFabFade(); // 拖完松手，重新开始闲置计时
   }
 
   // ---- 右键菜单（自绘，不用浏览器原生菜单）----
@@ -301,7 +372,10 @@
       { act: 'site', label: '本网站都隐藏' },
     ];
     // 只有拖过图标才给「恢复默认位置」，没拖过不必占菜单
-    if (fabPos) items.push({ act: 'reset', label: '恢复默认位置', sep: true });
+    if (fabPos) {
+      if (fabPos.edge) items.push({ act: 'unsnap', label: '取消贴边隐藏', sep: true });
+      items.push({ act: 'reset', label: '恢复默认位置', sep: !fabPos.edge });
+    }
     for (const it of items) {
       if (it.sep) {
         const hr = document.createElement('div');
@@ -330,6 +404,7 @@
     closeFabMenu();
     if (act === 'once') hideFabThisPage();
     else if (act === 'site') hideFabOnThisSite();
+    else if (act === 'unsnap') unsnapFab();
     else if (act === 'reset') { resetFabPos(); showExtToast('图标位置已恢复默认'); }
   }
 
@@ -443,8 +518,8 @@
     fab.addEventListener('pointerup', onFabPointerUp);
     fab.addEventListener('pointercancel', onFabPointerUp);
     fab.addEventListener('contextmenu', onFabContextMenu);
-    // ---- 闲置渐隐：出现 2 秒后降到 30% 透明度，任何交互（悬停/按住/点击）恢复不透明并重新计时 ----
-    fab.addEventListener('mouseenter', wakeFab);
+    // ---- 闲置渐隐 / 贴边唤出：出现 2 秒后降到 30% 透明度（贴边态则缩回边缘），交互恢复并重新计时 ----
+    fab.addEventListener('mouseenter', onFabHover);
     fab.addEventListener('mouseleave', armFabFade);
     armFabFade();
     // 首帧过去后再开过渡：否则初始位置会被当成一次位移动画播出来
