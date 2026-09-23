@@ -95,6 +95,28 @@
         return this.base + '/star/' + file;
       },
     },
+    {
+      id: 'geo',
+      name: '地球脉动',
+      desc: '每周一处地球奇观，从喜马拉雅山脉到银河拱桥',
+      base: 'https://anycomment-geo-pack.pages.dev',
+      // manifest.weeks = { 'NN': { n: 画面名, f: 文件名 } }；NN = ISO 周序号（与莫奈画集/星海漫游同结构）
+      resolve(manifest, date) {
+        if (!manifest || !manifest.weeks) return null;
+        const key = String(Math.min(52, isoWeek(date))).padStart(2, '0');
+        return manifest.weeks[key] ? key : null;
+      },
+      entry(manifest, key) {
+        if (!manifest || !manifest.weeks) return null;
+        const e = manifest.weeks[key];
+        if (!e) return null;
+        const n = displayName(e.n);
+        return { name: n, file: e.f, label: `第${Number(key)}周 · ${n}` };
+      },
+      imageUrl(file) {
+        return this.base + '/geo/' + file;
+      },
+    },
   ];
 
   const state = new Map(); // id -> { enabled, manifest, images: Map(key -> HTMLImageElement) }
