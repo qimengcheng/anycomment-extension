@@ -225,8 +225,21 @@
   let fabDragStart = null; // { x, y, l, t } 按下瞬间的鼠标位置与图标左上角
   let fabDragLast = null;  // 拖动过程中最后一次算出的落点
 
+  // ---- 闲置渐隐：出现 2 秒后加 .idle 降到 30% 透明度；交互（pointerdown/悬停）立即恢复并重新计时 ----
+  let fabFadeTimer = null;
+  function armFabFade() {
+    if (fabDragging) return; // 拖动中不计时，松手时才重新开始
+    if (fabFadeTimer) clearTimeout(fabFadeTimer);
+    fabFadeTimer = setTimeout(() => { fabFadeTimer = null; if (fab) fab.classList.add('idle'); }, 2000);
+  }
+  function wakeFab() {
+    if (fabFadeTimer) { clearTimeout(fabFadeTimer); fabFadeTimer = null; }
+    if (fab) fab.classList.remove('idle');
+  }
+
   function onFabPointerDown(e) {
     if (e.button !== 0) return; // 右键留给 contextmenu
+    wakeFab(); // 按住/拖动期间保持不透明，结束后由 pointerup 重新计时
     const r = fab.getBoundingClientRect();
     const cur = fabCur || { l: r.left, t: r.top };
     fabDragStart = { x: e.clientX, y: e.clientY, l: cur.l, t: cur.t };
@@ -261,6 +274,7 @@
     if (!fabDragMoved) return; // 没真正移动 → 交给 click 去打开侧栏
     suppressFabClick = true;
     fab.classList.remove('ac-drag');
+    armFabFade(); // 拖完松手，重新开始闲置计时
     // 用拖动过程中记下的落点，不回头读 getBoundingClientRect：
     // 过渡刚恢复那一帧读回的是动画中间值，会把位置记错
     fabPos = clampPos(fabDragLast || fabCur || fabDefaultPos());
@@ -429,6 +443,10 @@
     fab.addEventListener('pointerup', onFabPointerUp);
     fab.addEventListener('pointercancel', onFabPointerUp);
     fab.addEventListener('contextmenu', onFabContextMenu);
+    // ---- 闲置渐隐：出现 2 秒后降到 30% 透明度，任何交互（悬停/按住/点击）恢复不透明并重新计时 ----
+    fab.addEventListener('mouseenter', wakeFab);
+    fab.addEventListener('mouseleave', armFabFade);
+    armFabFade();
     // 首帧过去后再开过渡：否则初始位置会被当成一次位移动画播出来
     requestAnimationFrame(() => { if (fab) fab.classList.add('ac-anim'); });
     window.addEventListener('resize', () => {
@@ -509,6 +527,7 @@
       if (iframeReady) sendPage();
     } else {
       refreshBadge();
+      armFabFade(); // 收起侧栏后图标重新全显，2 秒无操作再渐隐
     }
   }
 
@@ -1434,10 +1453,20 @@
       touch-action: none; user-select: none; -webkit-user-select: none;
       padding: 0; outline: none;
     }
-    /* 首帧之后才挂上过渡，避免初始位置被当成一次位移动画播出来 */
-    .ac-fab.ac-anim { transition: left .22s ease, top .22s ease, transform .15s ease; }
+    /* 首帧之后才挂上过渡，避免初始位置被当成一次位移动画播出来。
+       opacity 两处不对称：去掉 idle（恢复不透明）走基础 .15s 快速回显，
+       加上 idle（渐隐）时由 .ac-fab.idle 覆盖成 .6s 缓慢淡出 */
+    .ac-fab.ac-anim { transition: left .22s ease, top .22s ease, transform .15s ease, opacity .15s ease; }
     .ac-fab:hover { transform: scale(1.06); }
     .ac-fab.ac-drag { transition: none; cursor: grabbing; transform: scale(1.06); }
+    /* 闲置渐隐：出现 2 秒后降到 30% 透明度（idle 类由 JS 定时挂上）。
+       悬停 / 侧栏展开（active）时恢复不透明——这两条必须写在 idle 之后，靠源顺序压过它 */
+    .ac-fab.idle {
+      opacity: .3;
+      transition: left .22s ease, top .22s ease, transform .15s ease, opacity .6s ease;
+    }
+    .ac-fab:hover { opacity: 1; }
+    .ac-fab.active { opacity: 1; }
     .ac-fab svg { width: 21px; height: 21px; fill: #fff; pointer-events: none; }
     .ac-badge {
       position: absolute; top: -4px; left: -4px; min-width: 18px; height: 18px;
