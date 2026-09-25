@@ -444,11 +444,16 @@
       // 图片未就绪（网络慢/失败）：保持当前预览，与原金句预览行为一致
       if (!packInfo) return;
     }
+    // 节日/纪念日/节气主题：解析海报（festival-art.js，图未就绪返回 null 由手绘渐变兜底）
+    let festInfo = null;
+    if (previewTheme && !packInfo && globalThis.__acFestivalArt) {
+      festInfo = await globalThis.__acFestivalArt.entry(previewTheme);
+    }
     try {
       const opts = { ...cfg };
       // 包条目不能塞进 theme_id（composeScreenshot 匹配不到会整段跳过主题包分支），走显式 packArt
       if (previewTheme && !packInfo) opts.theme_id = previewTheme;
-      const url = card.composeScreenshot({ img, dataUrl: sample, url: SAMPLE_URL, time: Date.now(), opts, packArt: packInfo });
+      const url = card.composeScreenshot({ img, dataUrl: sample, url: SAMPLE_URL, time: Date.now(), opts, packArt: packInfo, festivalArt: festInfo });
       const el = $('previewImg');
       el.src = url;
       el.style.display = '';
@@ -474,6 +479,7 @@
         doodle: cfg.card_marker !== false && cfg.card_doodle !== false,
       };
       if (packInfo) opts2.packArt = packInfo;
+      if (festInfo) opts2.festivalArt = festInfo;
       const url2 = card.drawShareCard(opts2);
       const el2 = $('previewShareImg');
       el2.src = url2;

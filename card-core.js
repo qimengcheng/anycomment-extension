@@ -226,27 +226,35 @@
     return p;
   }
 
-  // 液态玻璃（iOS 26 Liquid Glass 口径）：核心不是「起雾」，而是**透镜（lensing）**——
-  // 整块玻璃像一滴凸起的液滴，把背后的内容**放大**着透出来，且位移在圆角边缘归零，
-  // 于是画面在中部鼓起、贴边处「对回」原图，形成边缘那一圈折射感（连续过渡，不是一条环带）。
-  // 逐像素做法（对齐 iOS 逆向出的 shader 公式）：
-  //   sd   = 圆角矩形有向距离（内部为负）
-  //   er   = smoothstep(-0.7, 1, smoothstep(+band, -band, sd))   // 中心 1 → 边缘 0
-  //   采样 = 中心 + (像素 - 中心) × (1 - er×K)                     // er 越大放大倍率越高
-  //   R/G/B 各用略不同的 K → 边缘极细色散（chromatic aberration）
-  // 再叠：轻散射模糊、**自适应 tint**（按透射内容的平均亮度调节白veil，暗背景多铺保文字可读、
-  // 亮背景少铺保通透）、上缘入光/下缘聚光的镜面高光、fresnel 极细亮边。
-  // 画布被跨域图污染时 getImageData 会抛，自动回落 paintLiquidLite（整幅等比放大的近似透镜）。
+  // 液态玻璃（对齐 iOS 实拍的 Liquid Glass，26 引入、27 继续优化）。两条已被实拍否掉的错误路线，别再走回去：
+  //   ✕「把背后内容放大」——iOS 图里穿过玻璃边界的直线（衣服印字、黑胶排）一格都不该错开；
+  //   ✕「内部明显起雾」——那是**磨砂**档的特征。iOS 实拍同图并排：液态那半边印字锐利，磨砂那半边糊成一片。
+  // 液态玻璃的本职是**透得清楚**（scatter 恒低于磨砂的 blur 5），差异全压在轮廓上，靠三件事：
+  //   ① 贴内缘一道**暗化收边**（iOS 27 官方口径「引入暗化边缘以增强视觉分离度」），把玻璃从背景里切出来；
+  //   ② 轮廓**高亮反光**（fresnel 亮边 + 上缘入光/下缘聚光），iOS 27 明确「提高高光反射亮度」；
+  //   ③ 折射只压在**轮廓那几像素**：玻璃体中间是平的，只有贴边一圈表面倾斜，所以中心完全不失真，
+  //      位移从折射带内缘的 0 连续升到贴边处的最大值（很小，L=0.012 → 664 宽面板上约 8px）。
+  // ③ 的逐像素做法（对齐 iOS 逆向出的 shader：法线取自 SDF 梯度，凸面 → 采样点向内侧收）：
+  //   sd   = 圆角矩形有向距离（内部为负）；din = -sd 即「离表面多深」
+  //   t    = 1 - smoothstep(0, band, din)          // 表面 1 → 带内缘 0，带外恒为 0（中心不偏移）
+  //   n    = -∇sd 归一化                            // 内法线：直边处垂直于边、圆角处沿半径朝内
+  //   采样 = 像素 + n × t × maxDisp                 // 凸面把光往光轴折 → 边缘从更靠内侧取色
+  //   R/B 各用略不同的 t·maxDisp → 边缘极细色散（chromatic aberration）
+  // 另叠自适应 tint：按透射内容平均亮度调白 veil，暗背景多铺保文字可读、亮背景少铺保通透。
+  // 画布被跨域图污染时 getImageData 会抛，自动回落 paintLiquidLite（同心环带分步近似的边缘折射）。
   // alpha 与磨砂共用同一语义（0~100%，越大越接近实底白卡）；几何与 blur 值都是 CSS 逻辑像素。
-  // 透镜参数（调参器 .workbuddy/glass_styles_preview.html?g=6 直接改这里的同名字段做对比）
+  // 参数（调参器 .workbuddy/glass_styles_preview.html?g=6 直接改这里的同名字段做对比）
   const LIQ = {
     warp: 0.5,        // 透镜工作分辨率（设备像素倍率）：0.5 = 四分之一像素量，肉眼无损（内容本就轻模糊）
-    lens: 0.12,       // 透镜强度 K：中部放大倍率 = 1/(1-K)。0.34 会画成鱼眼（用户否决），0.12 ≈ 1.14× 的轻凸起
-    bandRatio: 0.5,   // 折射过渡带 = min(半宽,半高) × 该系数（越大「鼓起」范围越靠中心）
-    chroma: 0.05,     // 色散：R/B 通道位移相对 K 的偏差
-    scatter: 1.1,     // 透射后的散射模糊（px）：玻璃不是完美镜面
-    sat: 1.22,        // 透射内容提饱和（玻璃聚光会让颜色更浓）
-    padRatio: 0.22,   // 源图外扩比例：透镜要把面板外侧的内容拉进来
+    lens: 0.012,      // 边缘折射强度 L：贴边处最大内移 = L × 长边。Apple 的折射只压在轮廓那几像素，
+                      // 不是把画面整片推移；调大就变成放大镜（用户 2026-09-24 拿 iOS 实拍图否掉）
+    bandRatio: 0.035, // 折射带宽度 = bandRatio × 长边（按长边归一，避免竖长卡片整片糊进带里）
+    chroma: 0.1,      // 色散：R/B 通道位移相对 L 的偏差（只在折射带内可见）
+    scatter: 0.8,     // 透射后的扩散模糊（px）：液态玻璃的本职是**透得清楚**，必须明显低于磨砂档（默认 blur 5）。
+                      // 调大就退化成磨砂——iOS 实拍里液态那半边衣服印字、黑胶都是锐的，磨砂那半边才糊成一片
+    sat: 1.18,        // 透射内容提饱和（配合暗化收边一起读「更高对比度」）
+    edgeDark: 0.16,   // 暗化收边（iOS 27 官方口径「引入暗化边缘以增强视觉分离度」）：贴内缘一道暗线
+    padRatio: 0.05,   // 源图外扩比例：折射只往内采样，留这点边距供扩散模糊不吃边
   };
   const sstep = (e0, e1, v) => {
     const t = Math.max(0, Math.min(1, (v - e0) / (e1 - e0 || 1e-6)));
@@ -278,7 +286,12 @@
     const src = document.createElement('canvas');
     src.width = sw; src.height = sh;
     const sc = src.getContext('2d', { willReadFrequently: true });
-    sc.drawImage(ctx.canvas, Math.round(x * dpr + m.e - pad * dpr), Math.round(y * dprY + m.f - pad * dprY), sw, sh, 0, 0, sw, sh);
+    // 源矩形是「面板 + 四周外扩」这块区域在**整卡设备像素**下的尺寸，目标才是 warp 分辨率。
+    // 曾把 sw/sh 同时当源和目标 → 降采样根本没发生，源区被按 1:1 设备像素读进来却当成半分辨率用，
+    // 结果玻璃里的内容放大 1/ws 倍（2×）且整体错位，与背后背景完全脱节。
+    const rw = Math.max(1, Math.round((w + pad * 2) * dpr));
+    const rh = Math.max(1, Math.round((h + pad * 2) * dprY));
+    sc.drawImage(ctx.canvas, Math.round(x * dpr + m.e - pad * dpr), Math.round(y * dprY + m.f - pad * dprY), rw, rh, 0, 0, sw, sh);
     const sdata = sc.getImageData(0, 0, sw, sh).data; // 画布被污染时在此抛 SecurityError
     const pw = Math.max(2, Math.round(w * dpr * ws));
     const ph = Math.max(2, Math.round(h * dprY * ws));
@@ -289,8 +302,10 @@
     const d = img.data;
     const hx = pw / 2, hy = ph / 2, rr = Math.min(r * dpr * ws, hx, hy);
     const off = pad * dpr * ws; // 面板左上角在源图里的偏移
-    const band = Math.max(3, Math.min(hx, hy) * LIQ.bandRatio);
-    const K = LIQ.lens, CA = LIQ.chroma;
+    const longSide = 2 * Math.max(hx, hy);            // warp 像素下的长边（按长边归一，防竖长卡片畸变）
+    const band = Math.max(2, longSide * LIQ.bandRatio); // 折射带：带外完全不偏移
+    const maxDisp = longSide * LIQ.lens;               // 贴边处最大内移
+    const CA = LIQ.chroma;
     let lum = 0, n = 0;
     for (let oy = 0; oy < ph; oy++) {
       const my = oy + 0.5 - hy;
@@ -300,11 +315,20 @@
         const mx = ox + 0.5 - hx;
         const sd = sdRoundRect(mx, my, hx, hy, rr);
         if (sd > 0.5) { d[i + 3] = 0; continue; } // 圆角外留透明，边缘由 clip 兜底
-        const er = sstep(-0.7, 1, sstep(band, -band, sd));
-        const base = er * K;
-        d[i] = sampleCh(sdata, sw, sh, off + hx + mx * (1 - base * (1 + CA)), off + hy + my * (1 - base * (1 + CA)), 0);
-        d[i + 1] = sampleCh(sdata, sw, sh, off + hx + mx * (1 - base), off + hy + my * (1 - base), 1);
-        d[i + 2] = sampleCh(sdata, sw, sh, off + hx + mx * (1 - base * (1 - CA)), off + hy + my * (1 - base * (1 - CA)), 2);
+        const t = 1 - sstep(0, band, Math.min(-sd, band)); // 表面 1 → 带内缘 0；带外恒 0
+        let nx = 0, ny = 0;
+        if (t > 0) { // 内法线 = -∇sd（中心区不进这条分支 → 中心逐像素零位移）
+          const gx = sdRoundRect(mx + 1, my, hx, hy, rr) - sdRoundRect(mx - 1, my, hx, hy, rr);
+          const gy = sdRoundRect(mx, my + 1, hx, hy, rr) - sdRoundRect(mx, my - 1, hx, hy, rr);
+          const gl = Math.hypot(gx, gy) || 1;
+          const disp = t * maxDisp;
+          nx = (-gx / gl) * disp; ny = (-gy / gl) * disp;
+        }
+        const bx = off + hx + mx, by = off + hy + my;
+        const e = 1 + CA * t; // R 多折、B 少折 → 边缘细色散
+        d[i] = sampleCh(sdata, sw, sh, bx + nx * e, by + ny * e, 0);
+        d[i + 1] = sampleCh(sdata, sw, sh, bx + nx, by + ny, 1);
+        d[i + 2] = sampleCh(sdata, sw, sh, bx + nx / e, by + ny / e, 2);
         d[i + 3] = 255;
         if (((ox ^ oy) & 7) === 0) { lum += 0.299 * d[i] + 0.587 * d[i + 1] + 0.114 * d[i + 2]; n++; }
       }
@@ -344,7 +368,7 @@
     ctx.shadowColor = 'transparent';
     ctx.shadowBlur = 0;
     ctx.shadowOffsetY = 0;
-    // ③ 镜面高光：上缘入光最宽、下缘聚光成一条亮带（液滴边缘的水光）
+    // ③ 镜面高光：上缘入光最宽、下缘聚光成一条亮带（玻璃边缘的水光）
     const gTop = ctx.createLinearGradient(0, y, 0, y + h * 0.34);
     gTop.addColorStop(0, `rgba(255,255,255,${(0.5 * spec).toFixed(3)})`);
     gTop.addColorStop(1, 'rgba(255,255,255,0)');
@@ -364,7 +388,15 @@
     ctx.fill(outer);
     ctx.restore();
 
-    // ④ fresnel 亮边：极细（1.2px），上缘与下缘亮、两侧收；内侧再压一道淡暗线读厚度
+    // ④ 暗化收边（iOS 27「引入暗化边缘以增强视觉分离度」）：贴内缘一道 3px 暗线，把玻璃从背景里
+    // 「切」出来。clip 到面板内，描边外半不会溢出轮廓；面板越接近实底白卡，暗边越该收。
+    ctx.save();
+    ctx.clip(outer);
+    ctx.strokeStyle = `rgba(31,36,48,${(LIQ.edgeDark * (1 - a * 0.6)).toFixed(3)})`;
+    ctx.lineWidth = 3;
+    ctx.stroke(roundRectPath2(x + 1.5, y + 1.5, w - 3, h - 3, Math.max(1, r - 1.5)));
+    ctx.restore();
+    // ⑤ fresnel 亮边：极细（1.2px），上缘与下缘亮、两侧收；内侧再压一道淡暗线读厚度
     ctx.save();
     const gRim = ctx.createLinearGradient(0, y, 0, y + h);
     gRim.addColorStop(0, `rgba(255,255,255,${Math.min(1, 0.55 + 0.45 * spec)})`);
@@ -378,8 +410,9 @@
     ctx.stroke(roundRectPath2(x + 2.2, y + 2.2, w - 4.4, h - 4.4, Math.max(1, r - 2.2)));
     ctx.restore();
   }
-  // 回落路径（画布被跨域图污染、读不到像素时）：整幅等比放大的近似透镜 + 同样的 tint 与高光。
-  // 没有连续位移场，所以「鼓起」只在轮廓边缘读得出来，观感弱于主路径但不崩。
+  // 回落路径（画布被跨域图污染、读不到像素时）：与主路径同向的**窄边折射**近似 + 同样的 tint 与高光。
+  // 中心区 1:1 原样透出，只在折射带内按同心环带分步把内容放大（放大 = 采样点往中心收）。
+  // 没有连续位移场，所以用 STEPS 段阶梯代替 smoothstep，避免带内缘出现硬缝。
   function paintLiquidLite(ctx, x, y, w, h, r, a, m) {
     const pad = Math.max(w, h) * LIQ.padRatio;
     const toDevice = (v, axis) => v * (axis === 'x' ? m.a : m.d);
@@ -393,11 +426,31 @@
     );
     const outer = roundRectPath2(x, y, w, h, r);
     const spec = 0.34 + 0.66 * (1 - a);
-    const cw = (w + pad * 2) * (1 - LIQ.lens), ch = (h + pad * 2) * (1 - LIQ.lens);
+    // 与主路径同向的边缘折射近似：中心区 1:1 透出，只在折射带内按同心环带分步把内容放大
+    // （放大 = 采样点往中心收）。没有连续位移场，所以用 STEPS 段阶梯代替 smoothstep，避免带内缘硬缝。
+    const longSide = Math.max(w, h);
+    const band = Math.max(2, longSide * LIQ.bandRatio);
+    const D = Math.max(1, longSide / 2);                       // 折算半径取长边一半 → 左右缘位移与主路径等值（上下缘偏小，回落路径可接受）
+    const cux = (pad + w / 2) * m.a, cuv = (pad + h / 2) * m.d; // 面板中心在 src 像素里的位置
+    const STEPS = 4;
     ctx.save();
     ctx.clip(outer);
     ctx.filter = `blur(${LIQ.scatter}px) saturate(${LIQ.sat})`;
-    ctx.drawImage(src, x + w / 2 - cw / 2, y + h / 2 - ch / 2, cw, ch);
+    // 底：面板那块区域 1:1 透出（中心区就该长这样）。src 覆盖的是 [面板 - pad, 面板 + pad]，
+    // 必须按源矩形取用，整块 src 直接画进面板会把内容缩小 pad 那么多。
+    ctx.drawImage(src, pad * m.a, pad * m.d, w * m.a, h * m.d, x, y, w, h);
+    for (let s = 0; s < STEPS; s++) {
+      const d0 = (band * s) / STEPS, d1 = (band * (s + 1)) / STEPS;
+      const t = 1 - sstep(0, band, (d0 + d1) / 2);             // 该环带中点的折射强度（与主路径同一条 smoothstep）
+      const kk = Math.max(0.2, 1 - (t * longSide * LIQ.lens) / D);
+      const sw2 = w * kk * m.a, sh2 = h * kk * m.d;
+      const ring = roundRectPath2(x + d0, y + d0, Math.max(0, w - 2 * d0), Math.max(0, h - 2 * d0), Math.max(0, r - d0));
+      ring.addPath(roundRectPath2(x + d1, y + d1, Math.max(0, w - 2 * d1), Math.max(0, h - 2 * d1), Math.max(0, r - d1)));
+      ctx.save();
+      ctx.clip(ring, 'evenodd');
+      ctx.drawImage(src, cux - sw2 / 2, cuv - sh2 / 2, sw2, sh2, x, y, w, h);
+      ctx.restore();
+    }
     ctx.filter = 'none';
     ctx.shadowColor = 'rgba(31,36,48,0.10)';
     ctx.shadowBlur = 24;

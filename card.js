@@ -170,23 +170,36 @@
   // themeId 指定主题名（设置页预览用，优先级最高）；
   // defaultTheme 是无命中时的兜底风格名（card_default_theme 设置）；
   // packArt 为主题包（DLC）背景：显式传 { name, label, img }（设置页预览）或不传走自动路径
-  // 读 themepacks.js 发布的 __acThemePack；优先级：显式 themeId > 主题包 > 节日/节气 > 默认。
+  // 读 themepacks.js 发布的 __acThemePack；festivalArt 为节日/纪念日/节气海报（festival-art.js）：
+  // 显式传值（设置页预览）或不传走自动路径（当天命中且图就绪时优先于主题包——2026-09-25 用户拍板
+  // 「节日图优先」，图未就绪返回 null 回落主题包与手绘渐变）；优先级：显式 themeId > 节日图 > 主题包 > 节日手绘 > 默认。
   // glass=true 时走玻璃模式：白卡变半透明、背后画面按样式处理（card_glass_mode 总开关）；
   // glassStyle 三选一（card_glass_style）：translucent 半透明 / frost 磨砂玻璃 / liquid 液态玻璃；
   // glassBlur 为模糊半径 px（card_glass_blur 设置，只对 frost 生效；translucent 恒为 0，liquid 自带轻模糊）；
   // glassAlpha 为白色面板不透明度 %（card_glass_alpha 设置，0~100，三种样式通用）
-  function drawShareCard({ text, title, site, url, festive = true, memorial = false, themeId = '', defaultTheme = '', packArt, glass = false, glassStyle = 'frost', glassBlur = 5, glassAlpha = 55, marker = false, doodle = false, highlight = null }) {
-    // packArt 显式传值（设置页预览）> 自动路径 __acThemePack（当日命中）> 显式 themeId >
-    // 当天节日/节气/纪念日 > defaultTheme 兜底（主题名或 pack_<id>:<key> 主题包条目，经
-    // entrySync 同步解析——图片须已在引擎缓存，themepacks.js 会按 card_default_theme 预热）
+  function drawShareCard({ text, title, site, url, festive = true, memorial = false, themeId = '', defaultTheme = '', packArt, festivalArt, glass = false, glassStyle = 'frost', glassBlur = 5, glassAlpha = 55, marker = false, doodle = false, highlight = null }) {
+    // festivalArt 显式传值（设置页预览，themeId 指向节日主题时）> 自动路径 __acFestivalArt.day
+    // （当天命中且图就绪，优先于主题包）> packArt 显式传值 > 自动路径 __acThemePack（当日命中）>
+    // 显式 themeId > 当天节日/节气/纪念日手绘 > defaultTheme 兜底（主题名走 __acFestivalArt.syncByName
+    // 或手绘；pack_<id>:<key> 主题包条目经 entrySync 同步解析——图片须已在引擎缓存）
     let pack = null, usePack = false, theme = null;
-    if (packArt && packArt.img && !themeId) {
+    const FA = globalThis.__acFestivalArt || null;
+    if (themeId && festivalArt && festivalArt.img) {
+      pack = festivalArt;
+      usePack = true;
+    } else if (packArt && packArt.img && !themeId) {
       pack = packArt;
       usePack = true;
     } else {
-      const dayPack = !themeId && packArt === undefined ? (globalThis.__acThemePack || null) : null;
+      const auto = !themeId && packArt === undefined;
+      const dayPack = auto ? (globalThis.__acThemePack || null) : null;
+      // 节日/节气/纪念日海报：命中且图就绪时优先于主题包（用户拍板「节日图优先」）
+      const fa = auto && FA ? FA.day({ festival: festive !== false, memorial: memorial === true }) : null;
       const dayTheme = resolveDayTheme(new Date(), { festival: festive !== false, memorial: memorial === true });
-      if (dayPack && dayPack.img) {
+      if (fa && fa.img) {
+        pack = fa;
+        usePack = true;
+      } else if (dayPack && dayPack.img) {
         pack = dayPack;
         usePack = true;
       } else if (themeId) {
@@ -200,7 +213,10 @@
           : null;
         if (d && d.img) { pack = d; usePack = true; }
       } else if (defaultTheme) {
-        theme = THEME_LIST.find((t) => t.name === defaultTheme) || null;
+        // 默认风格是节日主题名：海报已预热走海报版式，否则手绘渐变
+        const df = FA ? FA.syncByName(defaultTheme) : null;
+        if (df && df.img) { pack = df; usePack = true; }
+        else theme = THEME_LIST.find((t) => t.name === defaultTheme) || null;
       }
     }
     const W = 720, PAD = 56, DPR = 2;
@@ -500,7 +516,7 @@
   }
 
   // 把捕获图与二维码/时间/品牌合成一张可下载的图，返回 dataURL
-  function composeScreenshot({ img, dataUrl, url, time = Date.now(), opts = {}, packArt }) {
+  function composeScreenshot({ img, dataUrl, url, time = Date.now(), opts = {}, packArt, festivalArt }) {
     const o = { ...SHOT_DEFAULTS, ...opts };
     const W = img.naturalWidth || img.width;
     const H = img.naturalHeight || img.height;
@@ -512,8 +528,7 @@
     const theme = o.theme_id ? (THEME_LIST.find((t) => t.name === o.theme_id) || null)
       : (resolveDayTheme(new Date(time), { festival: o.card_festival_bg !== false, memorial: o.card_memorial_bg === true })
         || (o.card_default_theme ? THEME_LIST.find((t) => t.name === o.card_default_theme) || null : null));
-    // 主题包图案背景（card_pack_shot_bg 开启时生效）：当日命中的包图替代渐变外框，
-    // 优先级与金句卡片一致：显式 packArt（设置页预览）/theme_id > 主题包 > 节日/节气 > 默认风格
+    // 主题包图案背景（card_pack_shot_bg 开启时生效）：当日命中的包图替代渐变外框
     let shotPack = (packArt && packArt.img && !o.theme_id) ? packArt : null;
     if (!shotPack && o.card_pack_shot_bg === true && !o.theme_id) {
       const dayPack = globalThis.__acThemePack || null;
@@ -526,8 +541,18 @@
         if (d && d.img) shotPack = d;
       }
     }
-    const packBg = shotPack;
-    if (!qr && !brand && !when && !theme && !packBg) return dataUrl;
+    // 节日/节气/纪念日海报：当天命中且图就绪时优先于主题包（与金句卡片同口径，2026-09-25
+    // 用户拍板「节日图优先」）。不受 card_pack_shot_bg 限制——节日背景开关 card_festival_bg
+    // 一直是截图背景的既有开关，海报只是替代原手绘渐变的素材
+    const FA = globalThis.__acFestivalArt || null;
+    let festBg = (o.theme_id && festivalArt && festivalArt.img) ? festivalArt : null;
+    if (!festBg && !o.theme_id && packArt === undefined && FA) {
+      festBg = FA.day({ festival: o.card_festival_bg !== false, memorial: o.card_memorial_bg === true });
+    }
+    const packBg = festBg || shotPack;
+    // 海报已自带完整画面，手绘大图标/水印不再叠加
+    const useTheme = festBg ? null : theme;
+    if (!qr && !brand && !when && !useTheme && !packBg) return dataUrl;
 
     const overlay = o.shot_qr_overlay === true;
     const corner = ['tl', 'tr', 'bl', 'br'].includes(o.shot_qr_corner) ? o.shot_qr_corner : 'br';
@@ -576,8 +601,8 @@
         Math.max(6, Math.round(24 * plan.s)), Math.max(2, Math.round(8 * plan.s))
       );
     }
-    paintCardAccent(ctx, theme, plan.cardX, plan.cardY, plan.cardW, plan.cardH, plan.radius, plan.s);
-    paintThemeIcon(ctx, theme, plan.outW, plan.outH, plan.s);
+    paintCardAccent(ctx, useTheme, plan.cardX, plan.cardY, plan.cardW, plan.cardH, plan.radius, plan.s);
+    paintThemeIcon(ctx, useTheme, plan.outW, plan.outH, plan.s);
 
     // 截图裁成圆角贴上，再描一圈淡边；主题包模式下先垫白 70% 再正片叠底（调参器 underlay=70）
     ctx.save();
