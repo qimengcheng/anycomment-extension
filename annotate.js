@@ -793,21 +793,24 @@
           const newDragLocalX = dragLocalX + localDx;
           const newDragLocalY = dragLocalY + localDy;
 
-          // 等比缩放：保持宽高比
+          // 等比缩放：保持宽高比。锚点（对角）到角点的距离本来就等于整个宽/高，
+          // 所以归一化分母必须是 orig.w / orig.h 全值——写成 /2 会让零位移时 scale 就等于 2
+          // （手还没拖就翻倍，且增益是鼠标位移的两倍），正是「拖一点就变得很大」的根因
           const ratio = orig.w / orig.h;
-          let scaleX = Math.abs(newDragLocalX - anchorLocalX) / (orig.w / 2);
-          let scaleY = Math.abs(newDragLocalY - anchorLocalY) / (orig.h / 2);
+          let scaleX = Math.abs(newDragLocalX - anchorLocalX) / (orig.w || 60);
+          let scaleY = Math.abs(newDragLocalY - anchorLocalY) / (orig.h || 60);
           const scale = Math.max(0.1, Math.max(scaleX, scaleY));
 
           newW = orig.w * scale;
           newH = orig.h * scale;
 
-          // 新的中心 = 锚点 + 新的半宽高方向偏移（旋转回世界坐标）
+          // 中心相对锚点的本地偏移：锚点在中心的哪一侧，中心就朝反方向挪半个新宽高。
+          // 只取 ±newHalf——再把 anchorLocal 加进去等于整体多推走半个原始尺寸，
+          // 表现为「按住的那个对角不钉住、贴纸跟着往反方向滑」
           const newHalfW = newW / 2;
           const newHalfH = newH / 2;
-          // 中心相对锚点的本地偏移（即 dragLocalX/Y 的对侧方向，取符号）
-          const centerLocalX = anchorLocalX + (dragLocalX > anchorLocalX ? newHalfW : -newHalfW);
-          const centerLocalY = anchorLocalY + (dragLocalY > anchorLocalY ? newHalfH : -newHalfH);
+          const centerLocalX = dragLocalX > anchorLocalX ? newHalfW : -newHalfW;
+          const centerLocalY = dragLocalY > anchorLocalY ? newHalfH : -newHalfH;
 
           sh.w = newW;
           sh.h = newH;
