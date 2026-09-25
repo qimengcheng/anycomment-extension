@@ -369,7 +369,9 @@
     fabMenu = document.createElement('div');
     fabMenu.className = 'ac-fab-menu';
     const items = [
-      { act: 'once', label: '本次隐藏' },
+      { act: 'dm', label: '我的私信' },
+      // 分隔线画在「本次隐藏」之前（sep 是画在该项上方），把私信与图标显隐类操作分开
+      { act: 'once', label: '本次隐藏', sep: true },
       { act: 'site', label: '本网站都隐藏' },
     ];
     // 只有拖过图标才给「恢复默认位置」，没拖过不必占菜单
@@ -403,10 +405,31 @@
     if (!btn) return;
     const act = btn.dataset.act;
     closeFabMenu();
-    if (act === 'once') hideFabThisPage();
+    if (act === 'dm') openDmPanel();
+    else if (act === 'once') hideFabThisPage();
     else if (act === 'site') hideFabOnThisSite();
     else if (act === 'unsnap') unsnapFab();
     else if (act === 'reset') { resetFabPos(); showExtToast('图标位置已恢复默认'); }
+  }
+
+  /**
+   * 「我的私信」：展开侧栏并让 iframe 打开私信会话列表。
+   * iframe 可能还没完成与 content script 的握手（AC_READY），未就绪时挂一次监听补发，
+   * 与划线评论 onQuoteComment 的等就绪做法保持一致。
+   */
+  function openDmPanel() {
+    if (!opened) setOpened(true);
+    const send = () => {
+      try { iframe.contentWindow?.postMessage({ type: 'AC_OPEN_DM' }, serverOrigin); } catch { /* 侧栏未加载时忽略 */ }
+    };
+    if (iframeReady) { send(); return; }
+    const waitReady = (e) => {
+      if (e.origin === serverOrigin && e.data && e.data.type === 'AC_READY') {
+        window.removeEventListener('message', waitReady);
+        setTimeout(send, 80);
+      }
+    };
+    window.addEventListener('message', waitReady);
   }
 
   function closeFabMenu() {
