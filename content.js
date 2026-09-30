@@ -212,6 +212,11 @@
     fabCur = { l: left, t: top };
     fab.style.left = left + 'px';
     fab.style.top = top + 'px';
+    // 倒计时胶囊随贴边侧换位：贴左缘 → 胶囊在图标右侧（常挂，唤出态图标贴左边也一样越界）；
+    // 贴上缘 → 胶囊下移（仅缩进态，唤出后图标完整可见走默认左侧居中）
+    const edge = (!opened && fabPos && fabPos.edge) || null;
+    fab.classList.toggle('ac-dock-l', edge === 'l');
+    fab.classList.toggle('ac-dock-t', edge === 't' && !fabPopped);
   }
 
   /** 隐藏图标 = 「本次隐藏」或命中服务端名单；只藏图标，选中文字的评论/分享入口与页面划线标记照旧 */
@@ -1630,17 +1635,24 @@
       padding: 0 4px; border-radius: 9px; background: #ff4d5e; color: #fff;
       font: 600 11px/18px system-ui, sans-serif; text-align: center; pointer-events: none;
     }
-    /* 自动刷新倒计时：悬在图标上方的小胶囊，随图标一起闲置渐隐（是 .ac-fab 子元素） */
+    /* 自动刷新倒计时：悬在图标左侧的小胶囊（贴右缘隐藏时图标只剩一条，倒计时放左边才完整可见），
+       随图标一起闲置渐隐（是 .ac-fab 子元素） */
     .ac-ar-chip {
-      position: absolute; top: -26px; left: 50%; transform: translateX(-50%);
+      position: absolute; top: 50%; transform: translateY(-50%);
+      right: calc(100% + 6px);
       padding: 2px 8px; border-radius: 10px; background: #1a9c5b; color: #fff;
       font: 600 11px/1.5 system-ui, sans-serif; white-space: nowrap; pointer-events: none;
       box-shadow: 0 2px 8px rgba(26,156,91,.4);
     }
     .ac-ar-chip::after {
-      content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
-      border: 4px solid transparent; border-top-color: #1a9c5b;
+      content: ''; position: absolute; top: 50%; left: 100%; transform: translateY(-50%);
+      border: 4px solid transparent; border-left-color: #1a9c5b;
     }
+    /* 贴左缘隐藏：图标只剩右缘一条，倒计时换到图标右侧，箭头改指回图标 */
+    .ac-fab.ac-dock-l .ac-ar-chip { right: auto; left: calc(100% + 6px); }
+    .ac-fab.ac-dock-l .ac-ar-chip::after { left: auto; right: 100%; border-left-color: transparent; border-right-color: #1a9c5b; }
+    /* 贴上缘隐藏：图标只剩顶部一条，倒计时下移到完整可见的位置（fab top=-32，34px → 视口 y=2） */
+    .ac-fab.ac-dock-t .ac-ar-chip { top: 34px; transform: none; }
     /* 右键菜单：贴着鼠标弹出，定位同样由 JS 写 left/top */
     .ac-fab-menu {
       position: fixed; left: 0; top: 0; visibility: hidden;
