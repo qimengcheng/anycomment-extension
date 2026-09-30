@@ -72,7 +72,7 @@
     show() { if (host) host.style.visibility = ''; },
   };
 
-  let host, shadow, fab, badge, panel, iframe, quoteBtn;
+  let host, shadow, fab, badge, panel, iframe, quoteBtn, arChip;
   let opened = false;
   let iframeReady = false;
   let pendingQuote = null; // 划线评论：待提交的选中文字和上下文
@@ -498,6 +498,53 @@
     });
   }
 
+  // ---- 自动刷新倒计时（悬浮图标小徽片）----
+  // 状态来自 background：interval = 间隔秒，nextAt = 下次预计刷新时刻(ms)。
+  // 页面加载时主动查一次；之后 background 在开关/改间隔时主动推 ac-autorefresh-state。
+  // 页面被 background 定时 reload 后 content script 重新注入，天然重新对表。
+  let arState = null;   // { interval, nextAt } | null
+  let arTimerId = null;
+
+  function fmtArCountdown(sec) {
+    return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0');
+  }
+
+  function renderArChip() {
+    if (!arChip || !arState || arState.interval <= 0) return;
+    // 闹钟可能被 Chrome 顺延，显示下限 0，等刷新真正发生
+    const remain = Math.min(Math.max(0, Math.ceil((arState.nextAt - Date.now()) / 1000)), arState.interval);
+    arChip.textContent = '↻ ' + fmtArCountdown(remain);
+  }
+
+  function setArChipState(state) {
+    arState = state;
+    if (!arChip) return;
+    if (!state || state.interval <= 0) {
+      arChip.hidden = true;
+      if (arTimerId) { clearInterval(arTimerId); arTimerId = null; }
+      return;
+    }
+    arChip.hidden = false;
+    renderArChip();
+    if (!arTimerId) arTimerId = setInterval(renderArChip, 500);
+  }
+
+  function queryArState() {
+    try {
+      chrome.runtime.sendMessage({ type: 'ac-autorefresh-get' }, (res) => {
+        if (chrome.runtime.lastError) return; // 扩展上下文失效（刚更新过扩展）时静默
+        if (res && res.ok) setArChipState({ interval: res.interval || 0, nextAt: res.nextAt || 0 });
+      });
+    } catch { /* 同上 */ }
+  }
+
+  // background 在 popup 开关 / 改间隔 / 关闭时主动推送，页面不用等下次刷新才对表
+  chrome.runtime.onMessage.addListener((msg) => {
+    if (msg && msg.type === 'ac-autorefresh-state') {
+      setArChipState({ interval: msg.interval || 0, nextAt: msg.nextAt || 0 });
+    }
+  });
+
   function mount() {
     host = document.createElement('div');
     host.style.cssText = 'all:initial; position:fixed; top:0; right:0; width:0; height:0; z-index:2147483647;';
@@ -511,7 +558,7 @@
     fab.title = '打开评论区';
     fab.innerHTML = `<svg viewBox="0 0 24 24" aria-hidden="true">
         <path d="M12 3C6.5 3 2 6.9 2 11.7c0 2.1.9 4 2.4 5.5-.2 1.2-.8 2.4-1.9 3.3 2 .2 3.7-.3 5-1.1 1.4.6 2.9.9 4.5.9 5.5 0 10-3.9 10-8.6S17.5 3 12 3z"/>
-      </svg><span class="ac-badge" hidden></span>`;
+      </svg><span class="ac-badge" hidden></span><span class="ac-ar-chip" hidden></span>`;
 
     panel = document.createElement('div');
     panel.className = 'ac-panel';
@@ -532,6 +579,7 @@
     applyFabVisibility();
     document.documentElement.appendChild(host);
     badge = fab.querySelector('.ac-badge');
+    arChip = fab.querySelector('.ac-ar-chip');
 
     fab.addEventListener('click', () => {
       if (suppressFabClick) { suppressFabClick = false; return; } // 拖动收尾那一下不算打开侧栏
@@ -584,6 +632,8 @@
     refreshHiddenSites();
     // 拉取本页被划线分享过的文字，标蓝色虚线
     refreshShareMarks();
+    // 本页开着自动刷新时，悬浮图标上方显示刷新倒计时
+    queryArState();
 
     // 页面空闲时预加载 iframe（只加载HTML/JS/CSS，不请求评论数据）
     const preload = () => { if (!iframe.src) iframe.src = SERVER + '/widget'; };
@@ -1571,6 +1621,17 @@
       position: absolute; top: -4px; left: -4px; min-width: 18px; height: 18px;
       padding: 0 4px; border-radius: 9px; background: #ff4d5e; color: #fff;
       font: 600 11px/18px system-ui, sans-serif; text-align: center; pointer-events: none;
+    }
+    /* 自动刷新倒计时：悬在图标上方的小胶囊，随图标一起闲置渐隐（是 .ac-fab 子元素） */
+    .ac-ar-chip {
+      position: absolute; top: -26px; left: 50%; transform: translateX(-50%);
+      padding: 2px 8px; border-radius: 10px; background: #1a9c5b; color: #fff;
+      font: 600 11px/1.5 system-ui, sans-serif; white-space: nowrap; pointer-events: none;
+      box-shadow: 0 2px 8px rgba(26,156,91,.4);
+    }
+    .ac-ar-chip::after {
+      content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%);
+      border: 4px solid transparent; border-top-color: #1a9c5b;
     }
     /* 右键菜单：贴着鼠标弹出，定位同样由 JS 写 left/top */
     .ac-fab-menu {

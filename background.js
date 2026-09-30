@@ -1,10 +1,23 @@
 // ========== 自动刷新标签页 ==========
 // popup 开关按 tab 粒度设置：chrome.alarms（最小周期 0.5 分钟 = 30 秒）到期后
-// chrome.tabs.reload 该标签页。状态 { tabId: intervalSec } 落 storage.local 持久化，
+// chrome.tabs.reload 该标签页。状态 { tabId: { interval, nextAt } } 落 storage.local 持久化，
+// nextAt = 下次预计刷新时刻（ms），供页面里悬浮图标的倒计时显示。
+// ⚠️ tab 级角标在页面导航到新文档时会被 Chrome 重置回全局默认，所以每次页面加载完成
+// （tabs.onUpdated status=complete）要按存储把角标补回来。
 // tab 关闭时清理；扩展重载/浏览器重启会清掉 alarms，onInstalled/onStartup 里按存储重建。
 const AR_PREFIX = 'ac-autorefresh-';
 const AR_MIN_SEC = 30;
 let arTabs = null; // SW 内存缓存，首次访问从 storage 读
+
+function arBadgeText(interval) {
+  return interval >= 60 ? Math.round(interval / 60) + 'm' : interval + 's';
+}
+
+// 状态变化时同步页面里的悬浮图标倒计时（页面没注入 content script 时静默）
+function arNotifyTab(tabId, state) {
+  chrome.tabs.sendMessage(tabId, { type: 'ac-autorefresh-state', interval: state.interval, nextAt: state.nextAt })
+    .catch(() => { /* 受限页 / 无 content script */ });
+}
 
 async function arLoad() {
   if (arTabs) return arTabs;
@@ -23,26 +36,32 @@ async function arSet(tabId, intervalSec) {
   const sec = Number(intervalSec) || 0;
   if (sec > 0) {
     const eff = Math.max(AR_MIN_SEC, sec);
-    tabs[tabId] = eff;
     // Chrome 120 起闹钟最小周期 0.5 分钟，更小的值会被浏览器强制钳到 0.5，行为一致
     chrome.alarms.create(AR_PREFIX + tabId, { periodInMinutes: Math.max(0.5, eff / 60) });
     // 角标显示间隔，让用户不用开 popup 也能确认这个 tab 还开着自动刷新
-    chrome.action.setBadgeText({ text: eff >= 60 ? Math.round(eff / 60) + 'm' : eff + 's', tabId });
+    chrome.action.setBadgeText({ text: arBadgeText(eff), tabId });
     chrome.action.setBadgeBackgroundColor({ color: '#1a9c5b', tabId });
+    tabs[tabId] = { interval: eff, nextAt: Date.now() + eff * 1000 };
+    arNotifyTab(tabId, tabs[tabId]);
   } else {
     delete tabs[tabId];
     chrome.alarms.clear(AR_PREFIX + tabId);
     chrome.action.setBadgeText({ text: '', tabId });
+    arNotifyTab(tabId, { interval: 0, nextAt: 0 });
   }
   arSave();
-  return tabs[tabId] || 0;
+  return tabs[tabId] ? tabs[tabId].interval : 0;
 }
 
-// 扩展重载 / 浏览器重启后 alarms 丢失，按存储重建（create 同名闹钟 = 重置周期，仅在生命周期事件里调）
+// 扩展重载 / 浏览器重启后 alarms 丢失，按存储重建（create 同名闹钟 = 重置周期，仅在生命周期事件里调）。
+// 兼容旧格式（v1.109.0 存的是纯数字间隔）；nextAt 已过期的一并重算。
 async function arReconcile() {
   const tabs = await arLoad();
   for (const id of Object.keys(tabs)) {
-    await arSet(Number(id), tabs[id]);
+    const v = tabs[id];
+    const interval = typeof v === 'number' ? v : (v && v.interval) || 0;
+    if (interval > 0) await arSet(Number(id), interval);
+    else delete tabs[id];
   }
 }
 
@@ -60,6 +79,18 @@ chrome.tabs.onRemoved.addListener((tabId) => {
   // 没加载过状态时只清闹钟，避免每个无关 tab 关闭都触发一次 storage 读
   if (arTabs) arCleanupIfGone(tabId);
   else chrome.alarms.clear(AR_PREFIX + tabId);
+});
+
+// 页面每次加载完成都要补角标：tab 级角标会被导航重置（见文件头注释）。
+// 走 arLoad() 而不是只看内存缓存：SW 刚被唤醒时缓存是空的，此时页面加载恰恰最常见。
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (changeInfo.status !== 'complete') return;
+  arLoad().then((tabs) => {
+    const st = tabs[tabId];
+    if (!st) return;
+    chrome.action.setBadgeText({ text: arBadgeText(st.interval), tabId });
+    chrome.action.setBadgeBackgroundColor({ color: '#1a9c5b', tabId });
+  });
 });
 
 // 安装时写入默认配置
@@ -189,8 +220,15 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     return true; // 异步响应
   }
   if (msg.type === 'ac-autorefresh-get') {
+    // popup 带 tabId；content script（悬浮图标倒计时）不带，用 sender 里的来源 tab
+    const tabId = typeof msg.tabId === 'number' ? msg.tabId : (sender.tab && sender.tab.id);
+    if (typeof tabId !== 'number') {
+      sendResponse({ ok: false });
+      return;
+    }
     arLoad().then((tabs) => {
-      sendResponse({ ok: true, interval: tabs[msg.tabId] || 0 });
+      const st = tabs[tabId];
+      sendResponse({ ok: true, interval: st ? st.interval : 0, nextAt: st ? st.nextAt : 0 });
     });
     return true; // 异步响应
   }
@@ -233,10 +271,17 @@ chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name.startsWith(AR_PREFIX)) {
     const tabId = Number(alarm.name.slice(AR_PREFIX.length));
     if (!Number.isInteger(tabId)) return;
-    chrome.tabs.get(tabId).then((tab) => {
+    chrome.tabs.get(tabId).then(async (tab) => {
       // 已被丢弃的休眠标签页重载没意义，直接清理
-      if (tab && !tab.discarded) chrome.tabs.reload(tabId);
-      else arCleanupIfGone(tabId);
+      if (!tab || tab.discarded) { await arCleanupIfGone(tabId); return; }
+      chrome.tabs.reload(tabId);
+      // 滚动下次刷新时刻，页面里悬浮图标的倒计时按它计算
+      const tabs = await arLoad();
+      const st = tabs[tabId];
+      if (st) {
+        st.nextAt = Date.now() + st.interval * 1000;
+        arSave();
+      }
     }).catch(() => arCleanupIfGone(tabId));
   }
 });
