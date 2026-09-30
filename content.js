@@ -159,9 +159,16 @@
     return p;
   }
 
+  /** 可用视口宽（不含经典滚动条）。window.innerWidth 含滚动条宽度（~15px），
+   *  右缘坐标若按它算：贴边隐藏只露 10px 一条 < 滚动条宽 → 整条被滚动条盖住，图标等于全隐。 */
+  function viewportW() {
+    const cw = document.documentElement ? document.documentElement.clientWidth : 0;
+    return cw > 0 ? cw : window.innerWidth;
+  }
+
   /** 把坐标夹回视口内（窗口缩小后图标不至于被推出屏幕外） */
   function clampPos(p) {
-    const maxL = Math.max(FAB_MARGIN, window.innerWidth - FAB_MARGIN - FAB_SIZE);
+    const maxL = Math.max(FAB_MARGIN, viewportW() - FAB_MARGIN - FAB_SIZE);
     const maxT = Math.max(FAB_MARGIN, window.innerHeight - FAB_MARGIN - FAB_SIZE);
     return {
       l: Math.min(Math.max(FAB_MARGIN, Math.round(p.l)), maxL),
@@ -177,7 +184,7 @@
    */
   function fabDefaultPos() {
     return {
-      l: Math.max(FAB_MARGIN, window.innerWidth - FAB_MARGIN - FAB_SIZE),
+      l: Math.max(FAB_MARGIN, viewportW() - FAB_MARGIN - FAB_SIZE),
       t: Math.max(FAB_MARGIN, Math.round(window.innerHeight / 2 - FAB_SIZE / 2)),
     };
   }
@@ -197,7 +204,8 @@
       const panelW = Math.min(400, Math.round(window.innerWidth * 0.92));
       if (base.l + FAB_SIZE > window.innerWidth - panelW) left = Math.max(FAB_MARGIN, base.l - panelW - 12);
     } else if (fabPos && fabPos.edge && !fabPopped) {
-      if (fabPos.edge === 'r') left = window.innerWidth - FAB_PEEK;
+      // 右缘按不含滚动条的宽度算，露出条才不会被滚动条压住（左/上缘不受滚动条影响）
+      if (fabPos.edge === 'r') left = viewportW() - FAB_PEEK;
       else if (fabPos.edge === 'l') left = FAB_PEEK - FAB_SIZE;
       else if (fabPos.edge === 't') top = FAB_PEEK - FAB_SIZE;
     }
@@ -335,7 +343,7 @@
     // 显示时再缩进只露一条）；从贴边拖离则解除贴边，恢复普通位置。
     // 角落同时够到两条边时取更近的那条（gapL/gapR/gapT 三选一），避免同一落点反复横跳。
     const gapL = fabPos.l;
-    const gapR = window.innerWidth - (fabPos.l + FAB_SIZE);
+    const gapR = viewportW() - (fabPos.l + FAB_SIZE);
     const gapT = fabPos.t;
     const nearest = Math.min(gapL, gapR, gapT);
     if (nearest <= FAB_SNAP_RANGE) {
