@@ -95,6 +95,14 @@
       const shotTime = Date.now();
       const dataUrl = card.composeScreenshot({ img: shot.img, dataUrl: raw, url: pageUrl(), time: shotTime, opts: cfg });
       const actions = [{
+        label: cfg.shot_qr !== false ? '二维码：开' : '二维码：关',
+        onClick: async (updateImg) => {
+          cfg.shot_qr = !(cfg.shot_qr !== false);
+          chrome.storage.local.set({ shot_qr: cfg.shot_qr });
+          updateImg(card.composeScreenshot({ img: shot.img, dataUrl: raw, url: pageUrl(), time: shotTime, opts: cfg }));
+          return cfg.shot_qr ? '二维码：开' : '二维码：关';
+        },
+      }, {
         label: cfg.card_pack_shot_bg === true ? '背景图案：开' : '背景图案：关',
         onClick: async (updateImg) => {
           cfg.card_pack_shot_bg = !(cfg.card_pack_shot_bg === true);
