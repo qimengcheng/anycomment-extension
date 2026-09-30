@@ -1,3 +1,67 @@
+// ========== 自动刷新标签页 ==========
+// popup 开关按 tab 粒度设置：chrome.alarms（最小周期 0.5 分钟 = 30 秒）到期后
+// chrome.tabs.reload 该标签页。状态 { tabId: intervalSec } 落 storage.local 持久化，
+// tab 关闭时清理；扩展重载/浏览器重启会清掉 alarms，onInstalled/onStartup 里按存储重建。
+const AR_PREFIX = 'ac-autorefresh-';
+const AR_MIN_SEC = 30;
+let arTabs = null; // SW 内存缓存，首次访问从 storage 读
+
+async function arLoad() {
+  if (arTabs) return arTabs;
+  const r = await chrome.storage.local.get({ autorefresh_tabs: {} });
+  arTabs = r.autorefresh_tabs || {};
+  return arTabs;
+}
+
+function arSave() {
+  chrome.storage.local.set({ autorefresh_tabs: arTabs || {} });
+}
+
+// intervalSec > 0 开启，0 关闭；返回最终生效间隔（可能被钳到下限）
+async function arSet(tabId, intervalSec) {
+  const tabs = await arLoad();
+  const sec = Number(intervalSec) || 0;
+  if (sec > 0) {
+    const eff = Math.max(AR_MIN_SEC, sec);
+    tabs[tabId] = eff;
+    // Chrome 120 起闹钟最小周期 0.5 分钟，更小的值会被浏览器强制钳到 0.5，行为一致
+    chrome.alarms.create(AR_PREFIX + tabId, { periodInMinutes: Math.max(0.5, eff / 60) });
+    // 角标显示间隔，让用户不用开 popup 也能确认这个 tab 还开着自动刷新
+    chrome.action.setBadgeText({ text: eff >= 60 ? Math.round(eff / 60) + 'm' : eff + 's', tabId });
+    chrome.action.setBadgeBackgroundColor({ color: '#1a9c5b', tabId });
+  } else {
+    delete tabs[tabId];
+    chrome.alarms.clear(AR_PREFIX + tabId);
+    chrome.action.setBadgeText({ text: '', tabId });
+  }
+  arSave();
+  return tabs[tabId] || 0;
+}
+
+// 扩展重载 / 浏览器重启后 alarms 丢失，按存储重建（create 同名闹钟 = 重置周期，仅在生命周期事件里调）
+async function arReconcile() {
+  const tabs = await arLoad();
+  for (const id of Object.keys(tabs)) {
+    await arSet(Number(id), tabs[id]);
+  }
+}
+
+async function arCleanupIfGone(tabId) {
+  const tabs = await arLoad();
+  if (tabs[tabId] !== undefined) {
+    delete tabs[tabId];
+    arSave();
+  }
+  chrome.alarms.clear(AR_PREFIX + tabId);
+  chrome.action.setBadgeText({ text: '', tabId });
+}
+
+chrome.tabs.onRemoved.addListener((tabId) => {
+  // 没加载过状态时只清闹钟，避免每个无关 tab 关闭都触发一次 storage 读
+  if (arTabs) arCleanupIfGone(tabId);
+  else chrome.alarms.clear(AR_PREFIX + tabId);
+});
+
 // 安装时写入默认配置
 chrome.runtime.onInstalled.addListener(() => {
   chrome.storage.local.get({ enabled: true }, (cfg) => {
@@ -7,6 +71,7 @@ chrome.runtime.onInstalled.addListener(() => {
   });
   // 闹钟在生命周期事件中创建（模块顶层会在 service worker 每次唤醒时重复执行）
   chrome.alarms.create('check-update', { periodInMinutes: 1440 });
+  arReconcile();
   // 安装后立即检查一次更新
   checkUpdate();
 });
@@ -123,6 +188,20 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
       .catch((e) => sendResponse({ ok: false, error: classifyCaptureError(e) }));
     return true; // 异步响应
   }
+  if (msg.type === 'ac-autorefresh-get') {
+    arLoad().then((tabs) => {
+      sendResponse({ ok: true, interval: tabs[msg.tabId] || 0 });
+    });
+    return true; // 异步响应
+  }
+  if (msg.type === 'ac-autorefresh-set') {
+    if (typeof msg.tabId !== 'number') {
+      sendResponse({ ok: false });
+      return;
+    }
+    arSet(msg.tabId, msg.intervalSec).then((interval) => sendResponse({ ok: true, interval }));
+    return true; // 异步响应
+  }
   if (msg.type === 'ac-arm-capture') {
     // popup 已带上它所在标签页；拿不到时才回退查最后聚焦窗口的活动标签
     if (typeof msg.tabId === 'number') {
@@ -141,6 +220,7 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
 // 浏览器启动时检查更新（旧版 Chrome 闹钟不跨会话，这里幂等补建一次）
 chrome.runtime.onStartup.addListener(() => {
   chrome.alarms.create('check-update', { periodInMinutes: 1440 });
+  arReconcile();
   checkUpdate();
 });
 
@@ -148,6 +228,16 @@ chrome.runtime.onStartup.addListener(() => {
 chrome.alarms.onAlarm.addListener((alarm) => {
   if (alarm.name === 'check-update') {
     checkUpdate();
+    return;
+  }
+  if (alarm.name.startsWith(AR_PREFIX)) {
+    const tabId = Number(alarm.name.slice(AR_PREFIX.length));
+    if (!Number.isInteger(tabId)) return;
+    chrome.tabs.get(tabId).then((tab) => {
+      // 已被丢弃的休眠标签页重载没意义，直接清理
+      if (tab && !tab.discarded) chrome.tabs.reload(tabId);
+      else arCleanupIfGone(tabId);
+    }).catch(() => arCleanupIfGone(tabId));
   }
 });
 

@@ -85,6 +85,12 @@
     .shot-row button { flex: 1; padding: 0 4px; font-size: 12px; }
     .version-info { color: #8a90a5; font-size: 12px; text-align: center; margin-top: 4px; }
     .version-info span { cursor: pointer; text-decoration: underline; color: #4f6ef7; }
+    .ar-row { display: flex; flex-direction: column; gap: 6px; }
+    .ar-head { display: flex; justify-content: space-between; align-items: center; color: #555c6e; }
+    .ar-head .ar-value { color: #1f2430; font-weight: 600; }
+    .ar-row.off .ar-slider-area { opacity: 0.45; }
+    .ar-row input[type="range"] { width: 100%; accent-color: #4f6ef7; margin: 0; }
+    .ar-row .hint { margin: 0; }
   </style>
 </head>
 <body>
@@ -105,6 +111,20 @@
         <span class="ac-switch-slider" />
       </label>
     </label>
+    <div class="ar-row off" id="arRow">
+      <label class="switch-row">
+        <span>自动刷新当前标签页</span>
+        <label class="ac-switch">
+          <input type="checkbox" id="autoRefresh" />
+          <span class="ac-switch-slider" />
+        </label>
+      </label>
+      <div class="ar-slider-area">
+        <div class="ar-head"><span>刷新间隔</span><span class="ar-value" id="arIntervalText">1 分钟</span></div>
+        <input type="range" id="arInterval" min="30" max="600" step="5" value="60" />
+        <p class="hint">拖动滑杆调整间隔（30 秒 ~ 10 分钟）。只对当前标签页生效，开启后该页会按间隔自动重载；扩展图标角标显示间隔，关闭开关即停。</p>
+      </div>
+    </div>
     <button id="profile" class="primary">个人中心</button>
     <div class="shot-row">
       <button data-shot="selection">框选截图</button>

@@ -135,5 +135,58 @@ document.querySelectorAll('[data-shot]').forEach((btn) => {
 
 $('shotOptions').addEventListener('click', () => chrome.runtime.openOptionsPage());
 
+// ========== 自动刷新当前标签页 ==========
+// 按 tab 粒度生效：popup 开关只作用于「当前标签页」，后台用 chrome.alarms 周期性 reload。
+// 页面刷新不会改变 tabId，因此定时跨刷新持续有效，无需 content script 参与。
+const arToggle = $('autoRefresh');
+const arSlider = $('arInterval');
+const arText = $('arIntervalText');
+const arRow = $('arRow');
+let arTabId = null;
+let arLoaded = false;
+
+function fmtInterval(sec) {
+  sec = Math.round(sec);
+  if (sec < 60) return sec + ' 秒';
+  const m = Math.floor(sec / 60);
+  const s = sec % 60;
+  return s ? `${m} 分 ${s} 秒` : `${m} 分钟`;
+}
+
+chrome.tabs.query({ active: true, currentWindow: true }, ([tab]) => {
+  arTabId = tab && typeof tab.id === 'number' ? tab.id : null;
+  if (arTabId === null) {
+    arToggle.disabled = true;
+    return;
+  }
+  chrome.runtime.sendMessage({ type: 'ac-autorefresh-get', tabId: arTabId }, (res) => {
+    const interval = res && res.ok ? res.interval || 0 : 0;
+    arToggle.checked = interval > 0;
+    if (interval > 0) arSlider.value = interval;
+    arText.textContent = fmtInterval(+arSlider.value);
+    arRow.classList.toggle('off', !arToggle.checked);
+    arLoaded = true;
+  });
+});
+
+arToggle.addEventListener('change', () => {
+  arRow.classList.toggle('off', !arToggle.checked);
+  if (arTabId === null) return;
+  chrome.runtime.sendMessage({
+    type: 'ac-autorefresh-set',
+    tabId: arTabId,
+    intervalSec: arToggle.checked ? +arSlider.value : 0,
+  });
+});
+
+arSlider.addEventListener('input', () => {
+  arText.textContent = fmtInterval(+arSlider.value);
+});
+// 拖动过程中不落盘，松手（change）才保存，避免一次拖动触发几十次 set
+arSlider.addEventListener('change', () => {
+  if (arTabId === null || !arToggle.checked || !arLoaded) return;
+  chrome.runtime.sendMessage({ type: 'ac-autorefresh-set', tabId: arTabId, intervalSec: +arSlider.value });
+});
+
 // 页面加载时刷新更新状态
 refreshUpdateUI();
