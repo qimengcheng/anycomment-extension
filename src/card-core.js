@@ -1,6 +1,10 @@
-// AnyComment 共享绘制模块（拆分自 card.js）：截图默认值 · 换行 · QR · 圆角/白卡/玻璃/霜冻绘制
-// 与 content.js / capture.js 同在 content_scripts 隔离世界（manifest 按序加载），用全局命名空间交换
-// 加载顺序：card-core.js → card-art.js → card.js
+// AnyComment 共享绘制模块：截图默认值 · 换行 · QR · 圆角/白卡/玻璃/霜冻绘制
+// ES 模块（WXT 重构）：依赖仅 vendor/qrcode.js；对外向 cardArt/card 等模块提供 cardCore（公开）与 cardCoreInternals（内部）
+import qrcode from './vendor/qrcode.js';
+
+export const cardCore = {};
+export const cardCoreInternals = {};
+
 (() => {
   // 截图设置的默认值：options 页与 capture.js 共用的唯一来源
   const SHOT_DEFAULTS = {
@@ -509,9 +513,9 @@
     ctx.restore();
   }
 
-  globalThis.__acCardCore = {  // 20 个公开 key 里属于 core 的 9 个
+  Object.assign(cardCore, {  // 20 个公开 key 里属于 core 的 9 个
     SHOT_DEFAULTS, fontMain, wrapText, cleanUrlForQr, buildQrMatrix,
     roundRectPath, drawQrModules, paintWhiteCard, fmtShotTime,
-  };
-  globalThis.__acCardCoreInternals = { paintGlassCard, paintGlassPanel, glassTextHalo, frostText, resolveGlassStyle, GLASS_STYLES, LIQ }; // 不进公开接口；LIQ 暴露只为本地调参器可改
+  });
+  Object.assign(cardCoreInternals, { paintGlassCard, paintGlassPanel, glassTextHalo, frostText, resolveGlassStyle, GLASS_STYLES, LIQ }); // 不进公开接口；LIQ 暴露只为本地调参器可改
 })();

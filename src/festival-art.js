@@ -4,12 +4,15 @@
 // 当天命中且图就绪时优先于主题包（2026-09-25 用户拍板「节日图优先」）；图未就绪/断网/清单
 // 不可用时返回 null，card.js 自动回落主题包与手绘渐变（兜底链不变，手绘代码保留作兜底）。
 // 图片一律 crossOrigin='anonymous'（Pages 已下发 ACAO:*），保证 canvas 不被污染、toDataURL 可用。
-// 加载顺序：card-core.js → card-art.js → 本文件 → card.js（card.js 同步读取，本文件必须先就位）
+// ES 模块（WXT 重构）：依赖 card-art（resolveDayTheme / THEME_LIST / themeDateInYear 唯一事实来源，勿另写一套）
+import { cardArt as art } from './card-art.js';
+
+export const festivalArt = {};
+
 (() => {
   const BASE = 'https://anycomment-festival-pack.pages.dev';
   const MANIFEST_TTL = 24 * 3600 * 1000; // manifest 每天最多拉一次
   const CACHE_KEY = 'festival_art_manifest';
-  const art = globalThis.__acCardArt; // 前置文件提供：resolveDayTheme / THEME_LIST / themeDateInYear
 
   let manifest = null;
   const images = new Map(); // 主题名 -> HTMLImageElement（仅内存，页面生命周期）
@@ -107,7 +110,7 @@
   });
   preload();
 
-  globalThis.__acFestivalArt = {
+  Object.assign(festivalArt, {
     // 同步取当天命中的海报（festival/memorial 开关由调用方传入，与 drawShareCard 的
     // festive/memorial、composeScreenshot 的 card_festival_bg/card_memorial_bg 同义）。
     // 图未就绪返回 null——绘制链路必须同步返回，绝不 await 网络（预热在 init 已发起）
@@ -139,5 +142,5 @@
       }
       return make(name);
     },
-  };
+  });
 })();

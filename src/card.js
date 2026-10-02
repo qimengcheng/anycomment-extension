@@ -1,10 +1,16 @@
-// AnyComment 共享绘制模块（拆分自 card.js）：主题包背景工具 · 金句卡片 · 截图合成 · 预览浮层
-// 与 content.js / capture.js 同在 content_scripts 隔离世界（manifest 按序加载），用全局命名空间交换
-// 加载顺序：card-core.js → card-art.js → card.js
+// AnyComment 共享绘制模块：主题包背景工具 · 金句卡片 · 截图合成 · 预览浮层
+// ES 模块（WXT 重构）：静态依赖链 card-core → card-art → festival-art → 本模块；被 content/capture/options 以 import 使用
+import { cardCore as C, cardCoreInternals as CI } from './card-core.js';
+import { cardArt as A, cardArtInternals as AI } from './card-art.js';
+import { festivalArt as festivalArtApi } from './festival-art.js';
+import { annotate } from './annotate.js';
+import { themePacks } from './themepacks.js';
+import { packState } from './pack-state.js';
+
+export const card = {};
+
 (() => {
   // 解构放 IIFE 顶部（而非末尾导出块旁）：消灭 TDZ 风险，中段新增加载期调用也安全
-  const C = globalThis.__acCardCore, CI = globalThis.__acCardCoreInternals;
-  const A = globalThis.__acCardArt, AI = globalThis.__acCardArtInternals;
   const { fontMain, wrapText, roundRectPath, buildQrMatrix, drawQrModules, paintWhiteCard, SHOT_DEFAULTS, fmtShotTime, cleanUrlForQr } = C;
   const { paintGlassPanel, glassTextHalo, frostText, GLASS_STYLES } = CI;
   const { paintBackdrop, paintCardAccent, resolveTheme, resolveDayTheme, themeDateInYear, THEME_LIST, paintMarker, paintDoodle, MARKER_PALETTE } = A;
@@ -183,7 +189,7 @@
     // 显式 themeId > 当天节日/节气/纪念日手绘 > defaultTheme 兜底（主题名走 __acFestivalArt.syncByName
     // 或手绘；pack_<id>:<key> 主题包条目经 entrySync 同步解析——图片须已在引擎缓存）
     let pack = null, usePack = false, theme = null;
-    const FA = globalThis.__acFestivalArt || null;
+    const FA = festivalArtApi;
     if (themeId && festivalArt && festivalArt.img) {
       pack = festivalArt;
       usePack = true;
@@ -192,7 +198,7 @@
       usePack = true;
     } else {
       const auto = !themeId && packArt === undefined;
-      const dayPack = auto ? (globalThis.__acThemePack || null) : null;
+      const dayPack = auto ? (packState.active || null) : null;
       // 节日/节气/纪念日海报：命中且图就绪时优先于主题包（用户拍板「节日图优先」）
       const fa = auto && FA ? FA.day({ festival: festive !== false, memorial: memorial === true }) : null;
       const dayTheme = resolveDayTheme(new Date(), { festival: festive !== false, memorial: memorial === true });
@@ -208,9 +214,7 @@
         theme = dayTheme;
       } else if (defaultTheme && defaultTheme.startsWith('pack_')) {
         const ci = defaultTheme.indexOf(':');
-        const d = globalThis.__acThemePacks
-          ? globalThis.__acThemePacks.entrySync(defaultTheme.slice(5, ci), defaultTheme.slice(ci + 1))
-          : null;
+        const d = themePacks.entrySync(defaultTheme.slice(5, ci), defaultTheme.slice(ci + 1));
         if (d && d.img) { pack = d; usePack = true; }
       } else if (defaultTheme) {
         // 默认风格是节日主题名：海报已预热走海报版式，否则手绘渐变
@@ -531,20 +535,20 @@
     // 主题包图案背景（card_pack_shot_bg 开启时生效）：当日命中的包图替代渐变外框
     let shotPack = (packArt && packArt.img && !o.theme_id) ? packArt : null;
     if (!shotPack && o.card_pack_shot_bg === true && !o.theme_id) {
-      const dayPack = globalThis.__acThemePack || null;
+      const dayPack = packState.active || null;
       if (dayPack && dayPack.img) {
         shotPack = dayPack;
-      } else if (o.card_default_theme && o.card_default_theme.startsWith('pack_') && globalThis.__acThemePacks) {
+      } else if (o.card_default_theme && o.card_default_theme.startsWith('pack_')) {
         // 默认风格指向包条目时作为兜底（entrySync 带开关守卫，包关闭即 null）
         const ci = o.card_default_theme.indexOf(':');
-        const d = globalThis.__acThemePacks.entrySync(o.card_default_theme.slice(5, ci), o.card_default_theme.slice(ci + 1));
+        const d = themePacks.entrySync(o.card_default_theme.slice(5, ci), o.card_default_theme.slice(ci + 1));
         if (d && d.img) shotPack = d;
       }
     }
     // 节日/节气/纪念日海报：当天命中且图就绪时优先于主题包（与金句卡片同口径，2026-09-25
     // 用户拍板「节日图优先」）。不受 card_pack_shot_bg 限制——节日背景开关 card_festival_bg
     // 一直是截图背景的既有开关，海报只是替代原手绘渐变的素材
-    const FA = globalThis.__acFestivalArt || null;
+    const FA = festivalArtApi;
     let festBg = (o.theme_id && festivalArt && festivalArt.img) ? festivalArt : null;
     if (!festBg && !o.theme_id && packArt === undefined && FA) {
       festBg = FA.day({ festival: o.card_festival_bg !== false, memorial: o.card_memorial_bg === true });
@@ -778,14 +782,14 @@
     let anno = null;
     let view;
     let stickerMode = false; // 荧光笔模式下是否处于贴纸编辑态
-    if (opts.annotate !== false && globalThis.__acAnnotate) {
+    if (opts.annotate !== false && annotate.create) {
       const annoOpts = {};
       // 有 onImageClick 说明是荧光笔模式，初始隐藏工具栏
       if (typeof opts.onImageClick === 'function') {
         annoOpts.hideToolbar = true;
         annoOpts.tool = 'sticker';
       }
-      anno = globalThis.__acAnnotate.create(root, dataUrl, annoOpts);
+      anno = annotate.create(root, dataUrl, annoOpts);
       view = anno.el;
     } else {
       const img = document.createElement('img');
@@ -1044,11 +1048,11 @@
     root.appendChild(mask);
   }
 
-  globalThis.__acCard = {
+  Object.assign(card, {
     SHOT_DEFAULTS, fontMain, wrapText, cleanUrlForQr, buildQrMatrix, roundRectPath,
     drawQrModules, paintBackdrop, paintWhiteCard, paintCardAccent, resolveTheme,
     resolveDayTheme, themeDateInYear, THEME_LIST, fmtShotTime, drawShareCard,
     composeScreenshot, planShot, showPreview, PREVIEW_CSS,
     autoHighlight: autoHighlightKeys, lastQuoteLayout: () => LAST_QUOTE, quoteRangeAt, MARKER_PALETTE,
-  };
+  });
 })();

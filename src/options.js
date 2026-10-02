@@ -1,8 +1,12 @@
 // AnyComment 截图设置页：读写 chrome.storage.local 的 shot_* 配置 + 主题包开关 + 实时预览
+// ES 模块（WXT 重构）：绘制链与主题包引擎走静态 import
+import { card } from './card.js';
+import { cardCoreInternals as CI } from './card-core.js';
+import { themePacks as packsApi } from './themepacks.js';
+import { packState } from './pack-state.js';
+import { festivalArt } from './festival-art.js';
+
 (() => {
-  const card = globalThis.__acCard;
-  const CI = globalThis.__acCardCoreInternals; // 玻璃样式推导与绘制走 card-core 同一口径（与 content.js 一致）
-  const packsApi = globalThis.__acThemePacks || null;
   const packs = (packsApi && packsApi.packs) || [];
   const $ = (id) => document.getElementById(id);
   const KEYS = Object.keys(card.SHOT_DEFAULTS);
@@ -417,12 +421,12 @@
       const img = await loadImage(sample);
       await drawPreviewCards(img);
       const defVal = cfg.card_default_theme || '';
-      if (defVal.startsWith('pack_') && packWarmKey !== defVal && globalThis.__acThemePacks) {
+      if (defVal.startsWith('pack_') && packWarmKey !== defVal) {
         packWarmKey = defVal;
         const i = defVal.indexOf(':');
         // 后台预热默认风格的包图，不 await——网络挂起时不能卡住 drawing 标志；
         // 热了重画一次（那时 drawShareCard 的 entrySync 才能命中包背景）
-        globalThis.__acThemePacks
+        packsApi
           .entry(defVal.slice(5, i), defVal.slice(i + 1))
           .then(() => { if (cfg.card_default_theme === defVal) return drawPreviewCards(img); })
           .catch(() => { /* 预热失败保持当前预览 */ });
@@ -438,16 +442,14 @@
     let packInfo;
     if (previewTheme.startsWith('pack_')) {
       const colon = previewTheme.indexOf(':');
-      packInfo = globalThis.__acThemePacks
-        ? await globalThis.__acThemePacks.entry(previewTheme.slice(5, colon), previewTheme.slice(colon + 1))
-        : null;
+      packInfo = await packsApi.entry(previewTheme.slice(5, colon), previewTheme.slice(colon + 1));
       // 图片未就绪（网络慢/失败）：保持当前预览，与原金句预览行为一致
       if (!packInfo) return;
     }
     // 节日/纪念日/节气主题：解析海报（festival-art.js，图未就绪返回 null 由手绘渐变兜底）
     let festInfo = null;
-    if (previewTheme && !packInfo && globalThis.__acFestivalArt) {
-      festInfo = await globalThis.__acFestivalArt.entry(previewTheme);
+    if (previewTheme && !packInfo) {
+      festInfo = await festivalArt.entry(previewTheme);
     }
     try {
       const opts = { ...cfg };

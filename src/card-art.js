@@ -1,8 +1,12 @@
-// AnyComment 共享绘制模块（拆分自 card.js）：农历节气推算 · 全部绘制原语 · 主题数据表 · resolve* / paint*
-// 与 content.js / capture.js 同在 content_scripts 隔离世界（manifest 按序加载），用全局命名空间交换
-// 加载顺序：card-core.js → card-art.js → card.js
+// AnyComment 共享绘制模块：农历节气推算 · 全部绘制原语 · 主题数据表 · resolve* / paint*
+// ES 模块（WXT 重构）：跨模块依赖仅 card-core；农历表覆盖 1900-2049
+import { cardCore } from './card-core.js';
+
+export const cardArt = {};
+export const cardArtInternals = {};
+
 (() => {
-  const { roundRectPath } = globalThis.__acCardCore; // ← 唯一跨文件依赖，其余内容零字符改动
+  const { roundRectPath } = cardCore; // ← 唯一跨模块依赖，其余内容零字符改动
 
   // ========== 节日 / 节气主题背景 ==========
   // 按当天日期命中，优先级：纪念日（开关开启时）> 公历节日（含母亲节/父亲节/感恩节现算）>
@@ -2884,8 +2888,8 @@
     sparkle(ctx, W - 98, 60, 5, gold, 0.5);
   }
 
-  globalThis.__acCardArt = { paintBackdrop, paintCardAccent, resolveTheme, resolveDayTheme, themeDateInYear, THEME_LIST, paintMarker, paintDoodle, MARKER_PALETTE };
-  globalThis.__acCardArtInternals = { paintThemeIcon, makeRng };
+  Object.assign(cardArt, { paintBackdrop, paintCardAccent, resolveTheme, resolveDayTheme, themeDateInYear, THEME_LIST, paintMarker, paintDoodle, MARKER_PALETTE });
+  Object.assign(cardArtInternals, { paintThemeIcon, makeRng });
   // ⚠️ THEME_LIST 以「同一数组引用」对外暴露：.workbuddy/flower_themes.js 在运行时 push 花主题。
   //    若改成 `card.THEME_LIST = [...]` 重新赋值，注入会静默脱钩（不报错，但花主题全不生效）。
 })();

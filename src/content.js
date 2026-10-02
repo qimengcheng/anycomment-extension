@@ -1,12 +1,16 @@
 // AnyComment 内容脚本：在页面右侧注入评论侧栏（iframe 指向 AnyComment 服务端 /widget）
+// ES 模块（WXT 重构）：绘制原语来自 card.js；服务器地址来自 server.js 单一来源
+import { SERVER } from './server.js';
+import { card } from './card.js';
+import { cardCoreInternals } from './card-core.js';
+import { themePacks } from './themepacks.js';
+import { packState } from './pack-state.js';
+import { uiBridge } from './ui-bridge.js';
+
 (() => {
   if (window.top !== window) return; // 只在顶级页面运行
 
-  // 固定服务器地址（不可修改）
-  const SERVER = 'https://anycomment.qimengcheng-47e.workers.dev';
   const serverOrigin = safeOrigin(SERVER);
-  globalThis.__acServer = SERVER; // 同隔离世界共享给 capture.js（截图分享上报用），避免二次硬编码域名
-  const card = globalThis.__acCard; // 绘制与预览原语见 card.js（同一隔离世界，manifest 先加载）
 
   // 节日/节气背景开关 + 纪念日背景开关 + 无命中兜底风格：模块级镜像读取（与 capture.js 同模式），
   // 生成卡片的点击链路保持同步，不在点击后临时查 storage —— showPreview 的自动复制依赖 user gesture 不能等回调
@@ -20,7 +24,7 @@
   let markerOn = true;
   let doodleOn = true;
   // 玻璃样式的推导口径与设置页共用 card-core 的 resolveGlassStyle（无 card_glass_style 时按旧 blur 迁移）
-  const resolveGlassStyle = () => globalThis.__acCardCoreInternals.resolveGlassStyle(glassCfg);
+  const resolveGlassStyle = () => cardCoreInternals.resolveGlassStyle(glassCfg);
   const glassCfg = { card_glass_style: '', card_glass_blur: 5 };
   chrome.storage.local.get({ card_festival_bg: true, card_memorial_bg: false, card_default_theme: '', card_glass_mode: false, card_glass_style: '', card_glass_blur: 5, card_glass_alpha: 55, card_marker: true, card_doodle: true }, (r) => {
     if (r) {
@@ -65,9 +69,9 @@
     }
   });
 
-  // 截图时临时隐藏扩展自身 UI：capture.js 与本脚本同隔离世界，直接走全局钩子。
+  // 截图时临时隐藏扩展自身 UI：capture.js 与本模块同 bundle，走 ui-bridge 共享句柄。
   // 用 visibility 不用 display —— display:none 会让 iframe 卸载，评论区要重新加载
-  globalThis.__acUi = {
+  uiBridge.impl = {
     hide() { if (host) host.style.visibility = 'hidden'; },
     show() { if (host) host.style.visibility = ''; },
   };
@@ -921,12 +925,12 @@
       const buildActions = () => {
         const acts = [];
         // 主题包随机换图：有可用包才出按钮，点一次随机抽一张重合成（避开当前这张）
-        if (globalThis.__acThemePacks?.randomReady?.()) {
-          let lastPack = globalThis.__acThemePack ? `${globalThis.__acThemePack.packId}:${globalThis.__acThemePack.key}` : '';
+        if (themePacks.randomReady?.()) {
+          let lastPack = packState.active ? `${packState.active.packId}:${packState.active.key}` : '';
           acts.push({
             label: '换一张背景',
             onClick: async (updateImg) => {
-              const e = await globalThis.__acThemePacks.randomEntry(lastPack);
+              const e = await themePacks.randomEntry(lastPack);
               if (!e) throw new Error('no-pack-art');
               lastPack = `${e.packId}:${e.key}`;
               curPack = e;

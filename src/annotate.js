@@ -2,6 +2,9 @@
 // 与 card.js 的 showPreview 协作：底层 canvas 画原图，上层 canvas 画标注，导出时两层合成。
 // 所有形状坐标存「原图像素」，线宽/字号存「屏幕像素」，绘制时乘 uiScale() 换算，
 // 这样长图（整页截图）被缩到视口高度预览时，笔触粗细与最终导出一致。
+// ES 模块（WXT 重构）：无跨模块依赖；card.js 静态 import 本模块的 annotate 导出
+export const annotate = {};
+
 (() => {
   const FONT = '"PingFang SC", "Microsoft YaHei", system-ui, sans-serif';
   const COLORS = ['#e5342c', '#ff8c1a', '#ffc60a', '#22c55e', '#2f6bff', '#8b5cf6', '#1f2430', '#ffffff'];
@@ -1013,5 +1016,5 @@
     };
   }
 
-  globalThis.__acAnnotate = { create, COLORS, TOOLS };
+  Object.assign(annotate, { create, COLORS, TOOLS });
 })();

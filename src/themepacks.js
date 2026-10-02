@@ -1,9 +1,13 @@
 // 主题包（DLC）通用引擎：未来所有可下载主题包都走这套规则
 // 每个包在 PACKS 注册表里声明：{ id, name, desc, base, resolve, entry, imageUrl }，
 // 引擎统一负责：开关存储（pack_<id>）、manifest 缓存（pack_<id>_manifest，24h）、
-// 按 key 懒加载图片（内存 Map）、胜出包发布到 globalThis.__acThemePack 供 card.js 同步读取。
+// 按 key 懒加载图片（内存 Map）、胜出包发布到 pack-state.js 的 packState.active 供 card.js 同步读取。
 // 优先级：注册表顺序（前面的包先命中）；未收录日期/断网/拉图失败 → 发布 null 回落默认背景。
 // 图片一律 crossOrigin='anonymous'（Pages 已下发 ACAO:*），保证 canvas 不被污染、toDataURL 可用。
+import { packState } from './pack-state.js';
+
+export const themePacks = {};
+
 (() => {
   const MANIFEST_TTL = 24 * 3600 * 1000; // manifest 每天最多拉一次（version 变化靠下次刷新生效）
 
@@ -240,10 +244,10 @@
           continue; // 拉图失败试下一个候选，最后回落 null
         }
       }
-      globalThis.__acThemePack = { packId: pack.id, key, name: e.name, label: e.label || e.name, img };
+      packState.active = { packId: pack.id, key, name: e.name, label: e.label || e.name, img };
       return;
     }
-    globalThis.__acThemePack = null;
+    packState.active = null;
   }
 
   async function refreshPack(pack, force = false) {
@@ -311,7 +315,7 @@
   init();
 
   // 设置页预览用接口
-  globalThis.__acThemePacks = {
+  Object.assign(themePacks, {
     packs: PACKS,
     manifest: (id) => (state.get(id) || {}).manifest || null,
     async ensure(id, force = false) {
@@ -396,5 +400,5 @@
       }
       return null;
     },
-  };
+  });
 })();

@@ -1,10 +1,14 @@
 // AnyComment 网页截图：选区 / 调度 / 合成 / 预览
 // 真正的捕获动作在 background.js（chrome.debugger 只能在扩展进程调用，content script 无法 attach）
+// ES 模块（WXT 重构）：card/SERVER/主题包引擎均走静态 import（原 globalThis 桥已废除）
+import { card } from './card.js';
+import { SERVER } from './server.js';
+import { themePacks } from './themepacks.js';
+import { packState } from './pack-state.js';
+import { uiBridge } from './ui-bridge.js';
+
 (() => {
   if (window.top !== window) return; // 只在顶级页面运行
-  const card = globalThis.__acCard;
-  if (!card) return;
-  const SERVER = globalThis.__acServer; // 服务器地址由 content.js 在同隔离世界共享（manifest 先于本文件加载）
 
   // 输出画布单边上限：CDP 与 Canvas 都有硬限制，整页长图靠降 clip.scale 兜住
   const MAX_OUT_PX = 8192;
@@ -49,8 +53,8 @@
     document.documentElement.appendChild(host);
   }
 
-  function hideExtUi() { try { globalThis.__acUi?.hide(); } catch { /* 评论区未挂载 */ } }
-  function showExtUi() { try { globalThis.__acUi?.show(); } catch { /* 评论区未挂载 */ } }
+  function hideExtUi() { try { uiBridge.impl?.hide(); } catch { /* 评论区未挂载 */ } }
+  function showExtUi() { try { uiBridge.impl?.show(); } catch { /* 评论区未挂载 */ } }
 
   async function run(mode) {
     if (busy) return;
@@ -112,12 +116,12 @@
         },
       }];
       // 主题包随机换图：有可用包才出按钮，点一次随机抽一张重合成（避开当前这张）
-      if (globalThis.__acThemePacks?.randomReady?.()) {
-        let lastPack = globalThis.__acThemePack ? `${globalThis.__acThemePack.packId}:${globalThis.__acThemePack.key}` : '';
+      if (themePacks.randomReady?.()) {
+        let lastPack = packState.active ? `${packState.active.packId}:${packState.active.key}` : '';
         actions.push({
           label: '换一张背景',
           onClick: async (updateImg) => {
-            const e = await globalThis.__acThemePacks.randomEntry(lastPack);
+            const e = await themePacks.randomEntry(lastPack);
             if (!e) throw new Error('no-pack-art');
             lastPack = `${e.packId}:${e.key}`;
             updateImg(card.composeScreenshot({ img: shot.img, dataUrl: raw, url: pageUrl(), time: shotTime, opts: cfg, packArt: e }));
